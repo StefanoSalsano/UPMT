@@ -1,0 +1,20 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+android:name="Policy Editor">
+	<item
+		android:id="@+id/wlan"
+		android:title="wlan0"
+		android:icon="@drawable/wifi_on"
+		android:alphabeticShortcut="w">
+	</item>
+	<item
+		android:id="@+id/eth0"
+		android:title="eth0"
+		android:icon="@drawable/data_on"
+		android:alphabeticShortcut="e">
+	</item>
+	<item
+		android:id="@+id/ppp0"
+		android:title="ppp0"
+		android:alphabeticShortcut="p">
+	</item>
+</menu>

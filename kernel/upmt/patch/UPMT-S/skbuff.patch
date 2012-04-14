@@ -1,0 +1,20 @@
+--- linux/include/linux/skbuff.h.orig	2010-10-16 11:03:33.000000000 +0200
++++ linux/include/linux/skbuff.h	2010-09-13 13:27:16.000000000 +0200
+@@ -394,6 +394,17 @@
+ 
+ 	__u16			vlan_tci;
+ 
++	//UPMT-S 
++	union  {
++		struct {
++			__u8 ip_proto;
++			__u32 ip_src;
++			__u32 ip_dst;
++			__u16 src_port;
++			__u16 dst_port;
++		} upmt_flow;
++		void *tun_entry;
++	};
+ 	sk_buff_data_t		transport_header;
+ 	sk_buff_data_t		network_header;
+ 	sk_buff_data_t		mac_header;

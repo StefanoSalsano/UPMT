@@ -1,0 +1,231 @@
+/*
+ * Copyright (C) 2006 Luca Veltri - University of Parma - Italy
+ * 
+ * This file is part of MjSip (http://www.mjsip.org)
+ * 
+ * MjSip is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * MjSip is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with MjSip; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * 
+ * Author(s):
+ * Luca Veltri (luca.veltri@unipr.it)
+ */
+
+package org.zoolu.net;
+
+
+import java.util.Vector;
+import java.util.Date;
+import java.util.Calendar;
+
+
+/** FragmentedUdpSocket extends UdpSocket providing fragmentation and
+  * reassembly functions.
+  * <p/>
+  * It can be used to deal with non-standard UDP/IP implementations that
+  * force an upper bound for datagram length
+  * (e.g. in Symbian 7.0 or 8.0 it is limited up to 512 bytes).
+  */
+public class FragmentedUdpSocket extends UdpSocket
+{
+   /** Whether printing debugging information on standard error output. */
+   public static boolean DEBUG=false;
+   
+   /** Maximum datagram length */
+   int max_len;
+
+
+   // *************************** fragments ***************************
+
+   /** Received fragments */
+   Vector fragments=new Vector();
+
+   /** Packet id */
+   long packet_id=0;
+
+   /** Length of the entire packet */
+   int packet_length=0;
+
+   /** Total length of the received fragments */
+   int fragments_length=0;
+
+
+   /** Whether the dfrag belongs to the current fragmented packet. */
+   boolean belongsToCurrentPacket(DatagramFragment dfrag)
+   {  return (/*fragments.size()>0 && */packet_id==dfrag.getPacketId());
+   }
+
+   /** Adds a new fragment. */
+   void addFragment(DatagramFragment dfrag)
+   {  fragments.addElement(dfrag);
+      fragments_length+=dfrag.data_length;
+      if (fragments.size()==1)
+      {  packet_id=dfrag.getPacketId();
+         packet_length=dfrag.getOriginalPacketLength();
+      }
+   }
+
+   /** Resets fragments. */
+   void resetFragments()
+   {  fragments.removeAllElements();
+      fragments_length=0;
+      packet_length=0;
+      packet_id=0;
+   }
+
+   /** Whether there are all fragments (that is the packet is completed). */
+   boolean allFragments()
+   {  return (fragments.size()>0 && fragments_length>=packet_length);
+   }
+
+
+   // ************************** costructors **************************
+
+   /** Creates a new FragmentedUdpSocket */ 
+   public FragmentedUdpSocket(int port, int max_len) throws java.net.SocketException
+   {  super(port);
+      this.max_len=max_len;
+   }
+
+   /** Creates a new FragmentedUdpSocket */ 
+   public FragmentedUdpSocket(int port, IpAddress ipaddr, int max_len) throws java.net.SocketException
+   {  super(port,ipaddr);
+      this.max_len=max_len;
+   }
+
+  
+   /** Gets the maximum datagram length. */
+   public int getMaximumLength()
+   {  return max_len;
+   }
+
+  
+   /** Sets the maximum datagram length. */
+   public void setMaximumLength(int max_len)
+   {  this.max_len=max_len;
+   }
+
+   
+   /** Receives a datagram packet from this socket. */
+   public void receive(UdpPacket pkt) throws java.io.IOException
+   {  
+      int orig_len=pkt.getLength();
+      super.receive(pkt);
+
+      if (!DatagramFragment.isFragment(pkt.getData(),pkt.getOffset(),pkt.getLength()))
+      {  if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"received (NOT FRAG)");
+         return;
+      }
+      // else
+      try
+      {  byte[] data=pkt.getData();
+         int off=pkt.getOffset();
+         int len=pkt.getLength();
+         byte[] buf=new byte[len];
+         for (int i=0; i<len; i++) buf[i]=data[off+i];
+         DatagramFragment dfrag=new DatagramFragment(buf,0,len);
+
+         if (!belongsToCurrentPacket(dfrag))
+         {  if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"received (FRAG MISMATCH)");
+            resetFragments();
+         }
+         addFragment(dfrag);
+         if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),dfrag.toString()+" ADDED");
+         
+         if (allFragments())
+         {  // last fragment
+            int length=DatagramFragment.doReassemble(fragments,pkt.getData(),pkt.getOffset());
+            pkt.setLength(length);
+            resetFragments();
+            if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"received (FRAG)");
+         }
+         else
+         {  // more fragments
+            pkt.setLength(orig_len);
+            receive(pkt);
+         }
+      }
+      catch (Exception e)
+      {  if (DEBUG) e.printStackTrace();
+         if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"received (FRAG ERROR)");
+         resetFragments();
+         pkt.setLength(orig_len);
+         receive(pkt);
+      }
+   }
+
+  
+   /** Sends an UDP packet from this socket. */ 
+   public void send(UdpPacket pkt) throws java.io.IOException
+   {  
+      if (pkt.getLength()<=max_len)
+      { 
+         super.send(pkt);
+         if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"sent (NOT FRAG)");
+      }
+      else
+      {
+         DatagramFragment[] dfrags=DatagramFragment.doFragment(pkt.getData(),pkt.getOffset(),pkt.getLength(),max_len);
+         
+         for (int i=0; i<(dfrags.length); i++)
+         {  byte[] packet=dfrags[i].getBytes();
+            super.send(new UdpPacket(packet,0,packet.length,pkt.getIpAddress(),pkt.getPort()));
+         }
+         if (DEBUG) printPacketTimestamp("udp",pkt.getIpAddress().toString(),pkt.getPort(),pkt.getLength(),"sent (FRAG)");
+      }
+   }
+
+
+   /** Converts this object to a String. */
+   public String toString()
+   {  return "limited-"+super.toString();
+   }
+
+
+   // ************************** log methods **************************
+   
+   /** Prints the packet timestamp on standard error output */
+   private void printPacketTimestamp(String proto, String remote_addr, int remote_port, int len, String message)
+   {  String str=remote_addr+":"+remote_port+"/"+proto+" ("+len+" bytes)";
+      if (message!=null) str+=": "+message;
+      System.err.println(formatHHMMSS(new Date())+" "+str);
+   }
+
+   /** Prints a message on standard error output */
+   private void println(String message)
+   {  System.err.println(message);
+   }
+
+   /** Gets a "HH:mm:ss.SSS EEE dd MMM yyyy" representation of a Date */
+   public static String formatHHMMSS(Date date)
+   {  Calendar cal=Calendar.getInstance();
+      cal.setTime(date);      
+      String month=Integer.toString(cal.get(Calendar.MONTH)+1);
+      String year=Integer.toString(cal.get(Calendar.YEAR));
+      String day=Integer.toString(cal.get(Calendar.DAY_OF_MONTH));
+      String hour=Integer.toString(cal.get(Calendar.HOUR_OF_DAY));
+      String min=Integer.toString(cal.get(Calendar.MINUTE));
+      String sec=Integer.toString(cal.get(Calendar.SECOND));
+      String millisec=Integer.toString(cal.get(Calendar.MILLISECOND));
+      //if (month.length()==1) month="0"+month;
+      //if (day.length()==1) day="0"+day;
+      if (hour.length()==1) hour="0"+hour;
+      if (min.length()==1) min="0"+min;
+      if (sec.length()==1) sec="0"+sec;
+      if (millisec.length()==1) millisec="00"+millisec;
+      else if (millisec.length()==2) millisec="0"+millisec;
+      
+      return hour+":"+min+":"+sec+"."+millisec+" "+day+"/"+month+"/"+year;
+   }
+
+}

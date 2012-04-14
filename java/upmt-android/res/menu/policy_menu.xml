@@ -1,0 +1,54 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+android:name="Policy Editor">
+<!-- 	<item -->
+<!-- 		android:alphabeticShortcut="a" android:numericShortcut="1" -->
+<!-- 		android:icon="@drawable/add" android:id="@string/add" -->
+<!-- 		android:title="@string/add" -->
+<!-- 		> -->
+<!-- 		<menu> -->
+<!-- 			<item -->
+<!-- 				android:id="@+id/wlan" -->
+<!-- 				android:title="wlan0" -->
+<!-- 				android:icon="@drawable/wifi" -->
+<!-- 				android:alphabeticShortcut="w"> -->
+<!-- 			</item> -->
+<!-- 			<item -->
+<!-- 				android:id="@+id/eth0" -->
+<!-- 				android:title="eth0" -->
+<!-- 				android:icon="@drawable/data" -->
+<!-- 				android:alphabeticShortcut="e"> -->
+<!-- 			</item> -->
+<!-- 			<item -->
+<!-- 				android:id="@+id/ppp0" -->
+<!-- 				android:title="ppp0" -->
+<!-- 				android:alphabeticShortcut="p"> -->
+<!-- 			</item> -->
+<!-- 			<item -->
+<!-- 				android:id="@+id/rmnet0" -->
+<!-- 				android:title="rmnet0" -->
+<!-- 				android:alphabeticShortcut="p"> -->
+<!-- 			</item> -->
+<!-- 		</menu> -->
+<!-- 	</item> -->
+	<item
+		android:id="@+id/del"
+		android:icon="@drawable/del"
+		android:title="@string/del"
+		android:numericShortcut="2" android:alphabeticShortcut="d">
+	</item>
+	<item
+		android:id="@+id/up"
+		android:icon="@drawable/up"
+		android:numericShortcut="3"
+		android:alphabeticShortcut="u"
+		android:title="@string/up"
+		>
+	</item>
+	<item
+		android:id="@+id/down"
+		android:title="@string/down"
+		android:icon="@drawable/down"
+		android:numericShortcut="4" android:alphabeticShortcut="d">
+	</item>
+
+</menu>

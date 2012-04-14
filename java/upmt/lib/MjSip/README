@@ -1,0 +1,2 @@
+MjSip library is included as source files instead of jar files for easy development.
+Source files are in "local" and "org.zoolu" package.

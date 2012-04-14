@@ -1,0 +1,28 @@
+diff -uNr linux-source-2.6.32/include/linux/skbuff.h linux-source-2.6.32-test/include/linux/skbuff.h
+--- linux-source-2.6.32/include/linux/skbuff.h	2009-12-03 04:51:21.000000000 +0100
++++ linux-source-2.6.32-test/include/linux/skbuff.h	2010-05-31 10:11:30.387038649 +0200
+@@ -331,6 +331,8 @@
+ 	 */
+ 	char			cb[48];
+ 
++	__u32			tgid; /* UPMT */
++
+ 	unsigned int		len,
+ 				data_len;
+ 	__u16			mac_len,
+diff -uNr linux-source-2.6.32/net/core/skbuff.c linux-source-2.6.32-test/net/core/skbuff.c
+--- linux-source-2.6.32/net/core/skbuff.c	2009-12-03 04:51:21.000000000 +0100
++++ linux-source-2.6.32-test/net/core/skbuff.c	2010-05-31 10:13:02.310978304 +0200
+@@ -220,8 +220,12 @@
+ 	skb_frag_list_init(skb);
+ 	memset(&shinfo->hwtstamps, 0, sizeof(shinfo->hwtstamps));
+ 
++	if(in_interrupt() == 0) /* UPMT */
++		skb->tgid=current->tgid; /* UPMT */
++	
+ 	if (fclone) {
+ 		struct sk_buff *child = skb + 1;
++		child->tgid=skb->tgid; /* UPMT */
+ 		atomic_t *fclone_ref = (atomic_t *) (child + 1);
+ 
+ 		kmemcheck_annotate_bitfield(child, flags1);

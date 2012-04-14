@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="ISO-8859-1"?>
+<project name="javapc" default="usage" basedir=".">
+
+	<property name="project-name" value="javapc"/>
+	<property name="src" value="src"/>
+	<property name="tar" value="bin"/>
+	<property name="jar-file-name" value="javapc.jar" />
+	<property name="main-class" value="au.songdi.javapc.JavaPC" />
+	
+	<target name="usage" description="Build file usage info (default task)">
+		<echo message=" " />
+		<echo message="  ${project-name} " />
+		<echo message="-------------------------------------------------------" />
+		<echo message="  Available Targets:" />
+		<echo message="  compile    - Compiles the source code" />
+		<echo message="  clean      - Delete class files and .jar file" />
+		<echo message="  jar        - Generate an .jar for source code" />
+        <echo message="  run        - Execute Main-Class" />
+		<echo message="-------------------------------------------------------" />
+	</target>
+
+	<target name="prepare" >
+		<mkdir dir="${tar}" />
+	</target>
+
+	<target name="clean" >
+		<delete dir="${tar}" />
+		<delete file="${jar-file-name}" />
+	</target>
+
+	<target name="compile" depends="clean,prepare">
+		<echo message="Compiling the source code!"/>
+		<javac
+	                  srcdir="${src}"
+	                  destdir="${tar}"
+	                  deprecation="true"
+	                  failonerror="true" debug="true"
+					    excludes="au/songdi/javapc/test/**"
+	                  >
+			<compilerarg value="-Xlint:unchecked"/>
+		</javac>
+	</target>
+
+	<target name="run" depends="jar">
+		<java jar="${jar-file-name}" fork="true" maxmemory="256m"/>
+	</target>
+
+	<target name="jar" depends="compile">
+		<jar destfile="${jar-file-name}" basedir="${tar}">
+			<manifest>
+				<attribute name="Main-Class" value="${main-class}"/>
+			</manifest>
+		</jar>
+	</target>
+
+</project>

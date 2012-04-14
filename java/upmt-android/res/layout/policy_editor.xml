@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout
+	android:id="@+id/RelativeLayout01" android:layout_width="fill_parent"
+	android:layout_height="fill_parent" xmlns:android="http://schemas.android.com/apk/res/android"
+	>
+
+	<ListView 
+		android:layout_width="wrap_content" android:id="@+id/lvInt"
+		android:layout_height="wrap_content" android:layout_alignParentTop="true"
+		android:choiceMode="singleChoice"
+		>
+	</ListView>
+	
+	<ImageButton
+		android:id="@+id/ibUp"
+		android:layout_above="@+id/btnApply"
+		android:layout_height="wrap_content" android:layout_width="80dip"
+		android:src="@drawable/up" android:onClick="myClickHandler"
+		>
+	</ImageButton>
+	
+	<ImageButton
+		android:layout_toRightOf="@+id/ibUp" android:layout_height="wrap_content"
+		android:id="@+id/ibDown" android:layout_width="80dip" 
+		android:layout_alignTop="@+id/ibUp" android:layout_alignBottom="@+id/ibUp"
+		android:src="@drawable/down"
+		android:onClick="myClickHandler"
+		>
+	</ImageButton>
+	
+	<ImageButton
+		android:layout_toRightOf="@+id/ibDown" android:layout_height="wrap_content"
+		android:id="@+id/ibAdd" android:layout_width="80dip"
+		android:layout_alignTop="@+id/ibDown" android:layout_alignBottom="@+id/ibDown"
+		android:src="@drawable/add"
+		android:onClick="myClickHandler"
+		>
+	</ImageButton>
+	
+	<ImageButton
+		android:layout_toRightOf="@+id/ibAdd" android:layout_height="wrap_content"
+		android:id="@+id/ibDel" android:layout_width="80dip"
+		android:layout_alignTop="@+id/ibAdd" android:layout_alignBottom="@+id/ibAdd"
+		android:src="@drawable/del"
+		android:onClick="myClickHandler"
+		>
+	</ImageButton>
+	
+	<Button
+		android:id="@+id/btnApply" android:layout_alignParentBottom="true"
+		android:layout_width="160dip" android:layout_alignParentLeft="true"
+		android:text="Apply" android:layout_height="wrap_content"
+		android:onClick="myClickHandler"
+		>
+	</Button>
+	
+	<Button
+		android:id="@+id/btnSave"
+		android:layout_width="160dip" android:layout_toRightOf="@+id/btnApply"
+		android:text="Save" android:layout_height="wrap_content"
+		android:layout_alignTop="@+id/btnApply" android:layout_alignBottom="@+id/btnApply"
+		android:onClick="myClickHandler"
+		>
+	</Button>
+	
+</RelativeLayout>

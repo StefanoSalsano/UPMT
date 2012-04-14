@@ -1,0 +1,3 @@
+to use UPMT-S extension we need a modified kernel and in particular an extended skbuff structure.
+To patch the kernel just replace include/linux/skbuff.h with the one in this folder. This file is
+a modified version of skbuff.h of kernel-2.6.32.21.

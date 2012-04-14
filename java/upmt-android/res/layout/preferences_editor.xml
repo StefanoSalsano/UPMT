@@ -1,0 +1,169 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TableLayout xmlns:android="http://schemas.android.com/apk/res/android"
+   	android:stretchColumns="1" 
+   	android:layout_width="fill_parent" 
+   	android:layout_height="fill_parent"
+   	android:gravity="center">
+    
+    <!-- cost slider -->
+    <TableRow android:padding="10dip">
+    	<TextView
+    		android:text="@string/cost" android:paddingRight="10dip" android:layout_marginTop="5dip"/>
+    	<LinearLayout
+    		android:orientation="vertical">
+			<SeekBar 
+				android:id="@+id/SbCost" 
+				android:layout_height="wrap_content" 
+				android:paddingBottom="5dip" 
+				android:layout_marginRight="15dip" 
+				android:paddingRight="5dip" android:layout_width="fill_parent">
+			</SeekBar>
+			<LinearLayout
+				android:orientation="horizontal" 
+				android:layout_width="fill_parent" 
+				android:layout_height="fill_parent" 
+				android:layout_marginRight="15dip">
+				<TextView
+					android:text="@string/dontCare" 
+					android:layout_height="wrap_content" 
+					android:layout_width="wrap_content"/>
+				<TextView
+					android:text="@string/useCheapConn" 
+					android:layout_height="wrap_content" 
+					android:layout_gravity="right" 
+					android:gravity="right" 
+					android:layout_width="fill_parent" 
+					android:paddingRight="5dip"/>
+			</LinearLayout>
+		</LinearLayout>
+	</TableRow>
+	
+	<!-- battery slider -->
+    <TableRow android:padding="10dip">
+    	<TextView
+    		android:text="@string/batteryLife" 
+    		android:paddingRight="10dip" 
+    		android:layout_marginTop="5dip"/>
+    	<LinearLayout
+    		android:orientation="vertical">
+			<SeekBar 
+				android:id="@+id/SbBattery" 
+				android:layout_width="fill_parent" 
+				android:layout_height="wrap_content" 
+				android:paddingBottom="5dip" 
+				android:layout_marginRight="15dip" 
+				android:paddingRight="5dip">
+			</SeekBar>
+			<LinearLayout
+				android:orientation="horizontal" 
+				android:layout_width="fill_parent" 
+				android:layout_height="fill_parent" 
+				android:layout_marginRight="15dip">
+				<TextView
+					android:text="@string/dontCare" 
+					android:layout_height="wrap_content" 
+					android:layout_width="wrap_content"/>
+				<TextView
+					android:text="@string/extendBattery" 
+					android:layout_height="wrap_content" 
+					android:layout_gravity="right" 
+					android:gravity="right" 
+					android:layout_width="fill_parent" 
+					android:paddingRight="5dip"/>
+			</LinearLayout>
+		</LinearLayout>
+	</TableRow>
+	
+	<!-- security slider -->
+    <TableRow android:padding="10dip">
+    	<TextView
+    		android:text="@string/securityLevel" 
+    		android:paddingRight="10dip" 
+    		android:layout_marginTop="5dip"/>
+    	<LinearLayout
+    		android:orientation="vertical">
+			<SeekBar 
+				android:id="@+id/SbSecurityLevel" 
+				android:layout_width="fill_parent" 
+				android:layout_height="wrap_content" 
+				android:paddingBottom="5dip" 
+				android:layout_marginRight="15dip" 
+				android:paddingRight="5dip">
+			</SeekBar>
+			<LinearLayout
+				android:orientation="horizontal" 
+				android:layout_width="fill_parent" 
+				android:layout_height="fill_parent" 
+				android:layout_marginRight="15dip">
+				<TextView
+					android:text="@string/dontCare" 
+					android:layout_height="wrap_content" 
+					android:layout_width="wrap_content"/>
+				<TextView
+					android:text="@string/high" 
+					android:layout_height="wrap_content" 
+					android:layout_gravity="right" 
+					android:gravity="right" 
+					android:layout_width="fill_parent" 
+					android:paddingRight="5dip"/>
+			</LinearLayout>
+		</LinearLayout>
+	</TableRow>
+	
+	<!-- quality slider -->
+    <TableRow android:padding="10dip">
+    	<TextView
+    		android:text="@string/qualityLevel" 
+    		android:paddingRight="10dip" 
+    		android:layout_marginTop="5dip"/>
+    	<LinearLayout
+    		android:orientation="vertical">
+			<SeekBar 
+				android:id="@+id/SbQualityLevel" 
+				android:layout_width="fill_parent" 
+				android:layout_height="wrap_content" 
+				android:paddingBottom="5dip" 
+				android:layout_marginRight="15dip" 
+				android:paddingRight="5dip">
+			</SeekBar>
+			<LinearLayout
+				android:orientation="horizontal" 
+				android:layout_width="fill_parent" 
+				android:layout_height="fill_parent" 
+				android:layout_marginRight="15dip">
+				<TextView
+					android:text="@string/dontCare" 
+					android:layout_height="wrap_content" 
+					android:layout_width="wrap_content"/>
+				<TextView
+					android:text="@string/high" 
+					android:layout_height="wrap_content" 
+					android:layout_gravity="right" 
+					android:gravity="right" 
+					android:layout_width="fill_parent" 
+					android:paddingRight="5dip"/>
+			</LinearLayout>
+		</LinearLayout>
+	</TableRow>
+	
+	
+	<!-- drop down for lowest acceptable quality 
+	<TableRow android:padding="10dip">
+		<LinearLayout android:orientation="vertical"
+			android:layout_span="2">
+		<TextView android:text="@string/acceptableMOS"
+			android:layout_width="fill_parent"
+			android:layout_height="wrap_content"/>
+		<Spinner android:id="@+id/SpinLowestQuality"
+			android:layout_width="wrap_content" 
+			android:layout_height="wrap_content" 
+			android:entries="@array/mean_oppinion_scores" 
+			android:layout_gravity="center" 
+			android:minWidth="200dip">
+		</Spinner>
+	</LinearLayout>
+	</TableRow>
+	-->
+	
+</TableLayout>
+

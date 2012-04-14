@@ -1,0 +1,28 @@
+diff -Naur linux-source-2.6.34/net/core/skbuff.c linux-source-2.6.34-test/net/core/skbuff.c
+--- linux-source-2.6.34/net/core/skbuff.c	2010-10-16 21:15:52.732982098 +0200
++++ linux-source-2.6.34-test/net/core/skbuff.c	2010-10-16 21:16:42.495226510 +0200
+@@ -213,8 +213,12 @@
+ 	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+ 	atomic_set(&shinfo->dataref, 1);
+ 
++	if(in_interrupt() == 0) /* UPMT */
++		skb->tgid=current->tgid; /* UPMT */
++	
+ 	if (fclone) {
+ 		struct sk_buff *child = skb + 1;
++		child->tgid=skb->tgid; /* UPMT */
+ 		atomic_t *fclone_ref = (atomic_t *) (child + 1);
+ 
+ 		kmemcheck_annotate_bitfield(child, flags1);
+diff -Naur linux-source-2.6.34/include/linux/skbuff.h linux-source-2.6.34-test/include/linux/skbuff.h
+--- linux-source-2.6.34/include/linux/skbuff.h	2010-10-16 21:16:01.131994668 +0200
++++ linux-source-2.6.34-test/include/linux/skbuff.h	2010-10-16 21:17:48.723999092 +0200
+@@ -329,6 +329,8 @@
+ 	 * first. This is owned by whoever has the skb queued ATM.
+ 	 */
+ 	char			cb[48] __aligned(8);
++	
++	__u32			tgid; /* UPMT */
+ 
+ 	unsigned long		_skb_refdst;
+ #ifdef CONFIG_XFRM

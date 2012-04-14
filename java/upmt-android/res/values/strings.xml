@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+	<string name="app_name">UPMT Control Panel</string>
+
+	<string name="preferences_label">"UPMT Preferences"</string>
+	<string name="policyEditor_label">"UPMT Policy"</string>
+
+	<string name="cost">Cost</string>
+	<string name="useCheapConn">Cheapest</string>
+	<string name="dontCare">&quot;Don't care&quot;</string>
+	<string name="batteryLife">Battery Life</string>
+	<string name="extendBattery">Best</string>
+	<string name="securityLevel">Security Level</string>
+	<string name="qualityLevel">Quality Level</string>
+	<string name="high">High</string>
+
+	<string name="currentInt">Current interface </string>
+	<string name="currentPolicy">Current policy </string>
+	<string name="storedPolicy">Stored policy </string>
+	<string name="advancedSetting">Advanced setting</string>
+	<string name="add">Add</string>
+	<string name="del">Delete</string>
+	<string name="up">UP</string>
+	<string name="down">Down</string>
+
+	<string name="wlan0">wlan0</string>
+	<string name="eth0">eth0</string>
+	<string name="ppp0">ppp0</string>
+	<string name="rmnet0">rmnet0</string>
+	<string name="usb0">usb0</string>
+
+	<string name="CURRENT_POLICY_TAG">cpt</string>
+	<string name="STORED_POLICY_TAG">spt</string>
+	<string name="CURRENT_INTERFACE_TAG">cit</string>
+	<string name="APP_NAME_TAG">name</string>
+	<string name="PACK_NAME_TAG">pack</string>
+	
+	<string name="exit">exit</string>
+	<string name="refresh">refresh</string>
+	<string name="settings">status</string>
+	
+	<string name="VIPA">Local VIPA: </string>
+	<string name="DEFAULT_ANCHOR_NODE">Default AN: </string>
+	<string name="CONNECTED_ANCHOR_NODES">Connected AN(s): </string>
+	
+	<string name="launch">Avvia</string>
+	
+	<string-array name="interfaces_array">
+		<item>wlan0</item>
+		<item>eth0</item>
+		<item>ppp0</item>
+	</string-array>
+
+	<!-- Portate dalla versione desktop -->
+	<string-array name="default_app_policy">
+		<item>Random</item>
+		<!-- <item>Customizable</item> -->
+		<!-- <item>eth0</item> -->
+		<!-- <item>wlan0</item> -->
+	</string-array>
+
+	<string-array name="no_upmt_app">
+	</string-array>
+
+	<string-array name="delim">
+		<item> </item>
+		<item>,</item>
+	</string-array>
+
+	<string-array name="skipIF">
+	</string-array>
+
+	<string name="vipaFix_TAG">vipa_fix</string>
+	<string name="logLevel_TAG">log_level</string>
+	<string name="logFile_TAG">log_file</string>
+	<string name="startPortTAG">start_port</string>
+	<string name="portRangeTAG">range_port</string>
+	<string name="noUpmtMarkTAG">no_upmt_packet_mark</string>
+	<string name="noUpmtMark">0xfafafafa</string>
+	<string name="rtTablesIndex_TAG">rt_tables_index</string>
+	<string name="sipID_Tag">sip_id_name</string>
+	<string name="upmtServerPortTag">upmt_server_port</string>
+	<string name="portForTunnelledSipTag">port_for_tunnelled_sip</string>
+	<string name="network_monitor_TAG">net_monitor</string>
+	<string name="no_upmt_interf_TAG">no_upmt_ifs</string>
+	<string name="app_manager_TAG">app_manager</string>
+	<string name="ANList_TAG">anchor_node_list</string>	<!--No default -->
+	<string name="maxANNumber_TAG">anchor_node_limit</string>
+	<string name="no_upmt_app_TAG">no_upmt_app</string>
+	<string name="app_monitor_TAG">app_monitor</string>
+	<string name="default_app_policy_TAG">default_app_policy</string>
+	<string name="signaling_policyTAG">signaling_policy</string>	<!--default: same-of-default_app_policy -->
+	<string name="app_policy_TAG">app_policy</string>
+	<string name="vipaFix">5.6.7.8</string>
+	<string name="network_monitor">LinuxDBus</string>
+	<string name="app_manager">GUI</string>
+	<string name="app_monitor">Default</string>
+	<string name="applicationPolicy_TAG">app_policy</string>
+	
+    <string name="iconized">UPMT</string>
+    <string name="disp_wifi">Wifi</string>
+    <string name="disp_cell">Cell</string>
+    <string name="disp_usb">Usb</string>
+    <string name="disp_in">Bytes in</string>
+    <string name="disp_out">Bytes out</string>
+    <string name="any">any</string>
+
+</resources>

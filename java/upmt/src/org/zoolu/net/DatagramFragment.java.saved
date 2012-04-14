@@ -1,0 +1,409 @@
+/*
+ * Copyright (C) 2006 Luca Veltri - University of Parma - Italy
+ * 
+ * This file is part of MjSip (http://www.mjsip.org)
+ * 
+ * MjSip is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ * 
+ * MjSip is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ * 
+ * You should have received a copy of the GNU General Public License
+ * along with MjSip; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ * 
+ * Author(s):
+ * Luca Veltri (luca.veltri@unipr.it)
+ */
+
+package org.zoolu.net;
+
+
+import java.util.Vector;
+
+
+/** Class DatagramFragment provides methods for managing datagram fragmentation
+  * over a generic datagram-oriented and connection-less communication protocol.
+  * <p/>
+  * DatagramFragment could be used to add fragmentation operation
+  * to the UDP transfer protocol.
+  * <p/>
+  * Each fragment start with
+  * a preamble (8 bytes) seen as distinguished magic cookie,
+  * followed by the fragment offset (2 bytes),
+  * followed by the original packet length (2 bytes),
+  * followed by the present data fragment.
+  */
+public class DatagramFragment
+{
+
+   /** Total fragment header length */
+   static final int HLEN=16;
+
+   /** Seem for id generation */
+   static long id_generator=0;
+
+   /** Seem for id generation */
+   static long pickId()
+   {  return id_generator++;
+   }
+
+   // ************************* packet header *************************
+
+   /** Fragment preamble (magic cookie) (7 bytes) */
+   static final byte[] PREAMBLE=(new String("DFRAG#!")).getBytes();
+
+   /** Current protocol version is 1 */
+   static final int VERSION=1;
+
+   /** Protocol version (1 byte) */
+   int version;
+
+   /** Unique identifier of the original datagram (4 bytes) */   
+   long packet_id;
+
+   /** Offset within the original packet (2 bytes) */
+   int packet_offset;
+
+   /** Length of the original packet (2 bytes) */
+   int packet_length;
+
+
+   // ************************* packet payload ************************
+
+   /** Data buffer */   
+   byte[] buf;
+
+   /** Offset within the data buffer */   
+   int data_offset;
+
+   /** Length of the data */   
+   int data_length;
+
+
+   // ************************ other attributes ***********************
+
+   /** Address */
+   //IpAddress ipaddr;
+   
+   /** Port */
+   //int port;
+
+   
+   // ************************* public methods ************************
+
+   /** Creates a new DatagramFragment from a raw packet */ 
+   public DatagramFragment(byte[] buf, int offset, int length) throws java.io.IOException
+   {  init(buf,offset,length/*,null,0*/);
+   }
+
+   /** Creates a new DatagramFragment from a raw packet */ 
+   /*public DatagramFragment(byte[] buf, int offset, int length, IpAddress ipaddr, int port)
+   {  init(buf,offset,length,ipaddr,port);
+   }*/
+
+   /** Creates a new DatagramFragment */ 
+   public DatagramFragment(byte[] buf, int offset, int length, long packet_id, int packet_offset, int packet_length)
+   {  init(VERSION,buf,offset,length,packet_id,packet_offset,packet_length/*,null,0*/);
+   }
+
+   /** Creates a new DatagramFragment */ 
+   /*public DatagramFragment(byte[] buf, int offset, int length, int packet_offset, int packet_length, IpAddress ipaddr, int port)
+   {  init(buf,offset,length,packet_offset,packet_length,ipaddr,port);
+   }*/
+
+
+   /** Inits the DatagramFragment from a raw packet */ 
+   private void init(byte[] buf, int offset, int length/*, IpAddress ipaddr, int port*/) throws java.io.IOException
+   {  if (!isFragment(buf,offset,length)) throw new java.io.IOException("Data do not seem a valid DatagraFragment");
+      offset+=PREAMBLE.length;
+      int version=buf[offset];
+      offset+=1;
+      long packet_id=longValue(buf[offset],buf[offset+1],buf[offset+2],buf[offset+3]);
+      offset+=4;
+      int packet_offset=intValue(buf[offset],buf[offset+1]);
+      offset+=2;
+      int packet_length=intValue(buf[offset],buf[offset+1]);
+      offset+=2;
+      length-=(HLEN);
+      init(version,buf,offset,length,packet_id,packet_offset,packet_length/*,ipaddr,port*/);
+   }
+
+   /** Inits the DatagramFragment */ 
+   private void init(int version, byte[] buf, int offset, int length, long packet_id, int packet_offset, int packet_length/*, IpAddress ipaddr, int port*/)
+   {  this.version=version;
+      this.buf=buf;
+      this.data_offset=offset;
+      this.data_length=length;
+      this.packet_id=packet_id;
+      this.packet_offset=packet_offset;
+      this.packet_length=packet_length;
+      //this.ipaddr=ipaddr;
+      //this.port=port;
+   }
+
+
+   /** Gets the IP address of the machine to which this datagram is being sent or from which the datagram was received. */
+   /*public IpAddress getIpAddress()
+   {  return ipaddr;
+   }*/
+
+   /** Gets the port number on the remote host to which this datagram is being sent or from which the datagram was received. */
+   /*public int getPort()
+   {  return port;
+   }*/
+
+   /** Gets the data received or the data to be sent. */
+   public byte[] getData()
+   {  return buf;
+   }
+
+   /** Gets the offset within the data buffer. */
+   public int getDataOffset()
+   {  return data_offset;
+   }
+
+   /** Gets the length of the data. */
+   public int getDataLength()
+   {  return data_length;
+   }
+
+   /** Gets the fragment offset within the original packet. */
+   public int getFragmentOffset()
+   {  return packet_offset;
+   }
+
+   /** Gets packet id. */
+   public long getPacketId()
+   {  return packet_id;
+   }
+
+   /** Gets the length of the original packet. */
+   public int getOriginalPacketLength()
+   {  return packet_length;
+   }
+
+   /** Sets the IP address of the machine to which this datagram is being sent. */
+   /*public void setIpAddress(IpAddress ipaddr)
+   {  this.ipaddr=ipaddr;
+   }*/
+
+   /** Sets the port number on the remote host to which this datagram is being sent. */
+   /*public void setPort(int port)
+   {  this.port=port;
+   }*/
+
+   /** Whether this is the first fragment of the datagram. */
+   public boolean isFirstFragment()
+   {  return packet_offset==0;
+   }
+
+   /** Whether this is the last fragment of the datagram. */
+   public boolean isLastFragment()
+   {  return (packet_offset+data_length)==packet_length;
+   }
+
+   /** Gets the raw packet containing the DatagramFragment. */
+   public byte[] getBytes()
+   {  byte[] pdu=new byte[HLEN+data_length];
+      int i=0;
+      // preamble
+      for (; i<PREAMBLE.length; i++) pdu[i]=PREAMBLE[i];
+      // version
+      pdu[i++]=(byte)version;
+      // packet id
+      pdu[i++]=byte3Long(packet_id);
+      pdu[i++]=byte2Long(packet_id);
+      pdu[i++]=byte1Long(packet_id);
+      pdu[i++]=byte0Long(packet_id);
+      // packet offset
+      pdu[i++]=highByte(packet_offset);
+      pdu[i++]=lowByte(packet_offset);
+      // packet length
+      pdu[i++]=highByte(packet_length);
+      pdu[i++]=lowByte(packet_length);
+      // payload (here it should be i==HLEN)
+      int j=data_offset;
+      int data_end=data_offset+data_length;
+      for (; j<data_end; j++) pdu[i++]=buf[j];
+      return pdu;
+   }
+
+   /** Whether a buffer contains a datagram fragment. */
+   public static boolean isFragment(byte[] data, int offset, int length)
+   {  boolean is_fragment=length>=PREAMBLE.length;
+      for (int i=0; is_fragment && i<PREAMBLE.length; i++) is_fragment=(data[offset+i]==PREAMBLE[i]);
+      return is_fragment;
+   }
+
+
+   /** Gets an array of DatagramFragments from a whole datagram with the constrain of a specified MTU size. */
+   public static DatagramFragment[] doFragment(byte[] buf, int offset, int length, int size)
+   {  long id=pickId();
+      int data_size=size-HLEN;
+      int n=length/data_size;
+      if ((length%data_size)!=0) n++;
+      //System.err.println("DEBUG: n: "+n);
+      DatagramFragment[] dfrags=new DatagramFragment[n];
+      for (int i=0; i<n; i++)
+      {  int dfrag_len=data_size;
+         if (i==(n-1)) dfrag_len=length-(n-1)*data_size;
+         dfrags[i]=new DatagramFragment(buf,offset+i*data_size,dfrag_len,id,offset+i*data_size,length);
+      }
+      return dfrags;
+   }
+
+
+   /** Gets the whole original packet from an array of DatagramFragments. */
+   public static byte[] doReassemble(DatagramFragment[] dfrags) throws java.io.IOException
+   {  byte[] packet=new byte[dfrags[0].getOriginalPacketLength()];
+      doReassemble(dfrags,packet,0);
+      return packet;
+   }
+
+
+   /** Gets the whole original packet from an array of DatagramFragments. */
+   public static int doReassemble(DatagramFragment[] dfrags, byte[] packet, int offset) throws java.io.IOException
+   {  // to verify the correctness of the operation
+      int total_length=dfrags[0].getOriginalPacketLength();
+      int counter=0;
+      // reassemble
+      for (int i=0; i<dfrags.length; i++)
+      {  DatagramFragment dfrag=dfrags[i];
+         byte[] data=dfrag.getData();
+         int data_offset=dfrag.getDataOffset();
+         int data_length=dfrag.getDataLength();
+         int fragment_offset=dfrag.getFragmentOffset();
+         for (int j=0; j<data_length; j++,counter++) packet[offset+fragment_offset+j]=data[data_offset+j];
+      }
+      if (counter!=total_length) throw new java.io.IOException("Packet fragment missing (received "+counter+" of "+total_length+" bytes)");
+      return total_length;
+   }
+
+
+   /** Gets the whole original packet from a Vector of DatagramFragments. */
+   public static byte[] doReassemble(Vector dfrags) throws java.io.IOException
+   {  byte[] packet=new byte[((DatagramFragment)dfrags.elementAt(0)).getOriginalPacketLength()];
+      doReassemble(dfrags,packet,0);
+      return packet;
+   }
+
+   /** Gets the whole original packet from a Vector of DatagramFragments. */
+   public static int doReassemble(Vector dfrags, byte[] packet, int offset) throws java.io.IOException
+   {  // to verify the correctness of the operation
+      int total_length=((DatagramFragment)dfrags.elementAt(0)).getOriginalPacketLength();
+      int counter=0;
+      // reassemble
+      for (int i=0; i<dfrags.size(); i++)
+      {  DatagramFragment dfrag=(DatagramFragment)dfrags.elementAt(i);
+         byte[] data=dfrag.getData();
+         int data_offset=dfrag.getDataOffset();
+         int data_length=dfrag.getDataLength();
+         int fragment_offset=dfrag.getFragmentOffset();
+         //System.err.println("Fragment "+fragment_offset+"/"+total_length+" ("+data_length+"B)");
+         for (int j=0; j<data_length; j++,counter++) packet[fragment_offset+j]=data[data_offset+j];
+      }
+      if (counter!=total_length) throw new java.io.IOException("Packet fragment missing (received "+counter+" of "+total_length+" bytes)");
+      return total_length;
+   }
+
+
+   /** Converts this object to a String. */
+   public String toString()
+   {  return "FRAG of "+data_length+" bytes at pos "+packet_offset+" of "+packet_length+" bytes of PKT #"+packet_id;
+   }
+
+
+   // ************************* private methods ***********************
+
+   /** Gets an int from two bytes. */
+   private static int intValue(byte b_high, byte b_low)
+   {  return ((((int)b_high)&0xFF)<<8) | (((int)b_low)&0xFF);
+   }
+
+   /** Gets the low byte of a int. */
+   private static byte lowByte(int i)
+   {  return (byte)(i&0xFF);
+   }
+
+   /** Gets the high byte of a int. */
+   private static byte highByte(int i)
+   {  return (byte)((i&0xFF00)>>8);
+   }
+ 
+   /** Gets a long from four bytes. */
+   private static long longValue(byte b3, byte b2, byte b1, byte b0)
+   {  return ((((long)b3)&0xFF)<<24) | ((((long)b2)&0xFF)<<16) | ((((long)b1)&0xFF)<<8) | (((long)b0)&0xFF);
+   }
+
+   /** Gets the byte #0 of an int (i.e. the lower byte). */
+   private static byte byte0Long(long i)
+   {  return (byte)(i&0xFF);
+   }
+
+   /** Gets the byte #1 of an int. */
+   private static byte byte1Long(long i)
+   {  return (byte)((i&0xFF00)>>8);
+   }
+
+   /** Gets the byte #2 of an int. */
+   private static byte byte2Long(long i)
+   {  return (byte)((i&0xFF0000)>>16);
+   }
+
+   /** Gets the byte #3 of an int (i.e. the higher byte). */
+   private static byte byte3Long(long i)
+   {  return (byte)((i&0xFF000000)>>24);
+   }
+
+
+   // ******************************* main *******************************
+ 
+   /** Test program */
+   public static void main(String[] args)
+   {
+      String text="Hello world!";
+      byte[] data=text.getBytes();
+      int mtu=16;
+      
+      System.out.println("Original packet: "+text+" ("+data.length+" bytes)");
+         
+      DatagramFragment[] dfrags=DatagramFragment.doFragment(data,0,data.length,mtu);
+      
+      Vector dfrags_err=new Vector();
+      
+      for (int i=0; i<(dfrags.length); i++)
+      {  DatagramFragment dfrag=dfrags[i];
+         System.out.println("\n------------- New Fragment -------------");
+         //System.out.println("Fragment offset: "+dfrag.getFragmentOffset());
+         //System.out.println("Fragment length: "+dfrag.getDataLength());
+         //System.out.println("Fragment: "+new String(dfrag.getData(),dfrag.getDataOffset(),dfrag.getDataLength()));
+
+         byte[] rawfrag=dfrag.getBytes();
+         try
+         {  dfrag=new DatagramFragment(rawfrag,0,rawfrag.length);
+            System.out.println("Fragment offset: "+dfrag.getFragmentOffset());
+            System.out.println("Fragment length: "+dfrag.getDataLength());
+            System.out.println("Fragment: "+new String(dfrag.getData(),dfrag.getDataOffset(),dfrag.getDataLength()));
+            
+            dfrags_err.addElement(dfrag);
+         }
+         catch (Exception e) {  e.printStackTrace();  }
+      }
+      
+      // do error
+      //dfrags_err.removeElementAt(2);
+      
+      try
+      {  byte[] packet=DatagramFragment.doReassemble(dfrags_err);
+         System.out.println("");
+         System.out.println("Reassembled packet: "+new String(packet)+" ("+packet.length+" bytes)");
+      }
+      catch (Exception e) {  e.printStackTrace();  }
+   }
+}

@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+        android:layout_width="fill_parent" android:layout_height="wrap_content"
+        android:padding="5dip"
+        >
+
+
+        <ImageView android:id="@+id/appIcon"
+                android:layout_width="50dip" android:layout_height="50dip">
+        </ImageView>
+
+        <TextView
+        		android:text="Nome app" android:layout_marginLeft="5dip"
+        		android:maxLength="20"
+                android:textAppearance="?android:attr/textAppearanceLarge" android:id="@+id/appName"
+                android:layout_toRightOf="@id/appIcon"
+                android:layout_width="wrap_content" android:layout_height="wrap_content"
+                >
+        </TextView>
+        
+        <ImageView
+        		 android:id="@+id/running"
+        		android:layout_marginLeft="10dip" android:layout_toRightOf="@+id/appName"
+        		android:layout_width="25dip" android:layout_height="25dip"
+        		android:layout_alignTop="@+id/appName" android:layout_alignBottom="@+id/appName"
+        		>
+        </ImageView>
+        
+        <ImageView
+        		android:id="@+id/custom"
+        		android:layout_alignLeft="@+id/appName" android:layout_below="@id/appName"
+        		android:layout_width="25dip" android:layout_height="25dip">
+		</ImageView>
+
+
+        <ImageView 
+                android:id="@+id/int1"
+                android:layout_toRightOf="@+id/custom"
+				android:layout_alignTop="@+id/custom" android:layout_alignBottom="@+id/custom"
+                android:layout_width="25dip" android:layout_height="25dip">
+        </ImageView>
+
+		<ImageView 
+                android:id="@+id/int2"
+                android:layout_toRightOf="@+id/int1"
+                android:layout_alignTop="@+id/int1" android:layout_alignBottom="@+id/int1"
+                android:layout_width="25dip" android:layout_height="25dip">
+        </ImageView>
+        
+		<ImageView 
+                android:id="@+id/int3"
+                android:layout_toRightOf="@+id/int2"
+                android:layout_alignTop="@+id/int2" android:layout_alignBottom="@+id/int2"
+                android:layout_width="25dip" android:layout_height="25dip">
+        </ImageView>
+
+</RelativeLayout>

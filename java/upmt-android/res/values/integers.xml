@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+   	<integer name="portRange">100</integer>
+	<integer name="startPort">50000</integer>
+	<integer name="rtTablesIndex">100</integer>
+	<integer name="upmtServerPort">5066</integer>
+	<integer name="portForTunnelledSip">40000</integer>
+	<integer name="maxANNumber">2</integer>
+	
+</resources>

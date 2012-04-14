@@ -1,0 +1,17 @@
+#!/bin/bash -x
+
+sudo iptables -F
+sudo iptables -F -t nat
+sudo iptables -F -t mangle
+
+sudo modprobe -r xt_UPMT
+sudo modprobe -r upmt
+
+sudo ip ru del prio 101
+sudo ip ru del prio 102
+sudo ip ru del prio 29999
+sudo ip ru del prio 30000
+
+sudo cp java/rt_tables /etc/iproute2/
+
+sudo killall upmt-appmon
