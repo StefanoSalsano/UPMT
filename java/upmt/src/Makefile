@@ -22,9 +22,11 @@ install:
 	install -m 0755 lib$(LIBNAME).so $(JNIPATH)
 
 clean:
-	rm -rf $(CLASSh)
-	rm -rf ./$(CLASSpath).class
-	rm -rf lib$(LIBNAME).so
+	rm -rf	$(CLASSh)
+	rm -rf	./$(CLASSpath).class
+	rm -rf	lib$(LIBNAME).so
+	rm -rf	../bin
+	rm -f	../RMEpeer.jar
 
 remove:
 	rm -rf $(JNIPATH)/lib$(LIBNAME).so

@@ -3,7 +3,7 @@
     <!--this file was created by Eclipse Runnable JAR Export Wizard-->
     <!--ANT 1.7 is required                                        -->
     <target name="create_run_jar">
-        <jar destfile="RMEpeer.jar" filesetmanifest="mergewithoutmain">
+        <jar destfile="java/upmt/RMEpeer.jar" filesetmanifest="mergewithoutmain">
             <manifest>
                 <attribute name="Main-Class" value="upmt.peer.RMEPeer"/>
                 <attribute name="Class-Path" value="."/>

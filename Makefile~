@@ -16,18 +16,15 @@ default:
 	$(MAKE) -C upmtconf/
 	$(MAKE) -C upmt-appmon/
 	$(MAKE) -C java/upmt/src/
-	$(MAKE) -C netem/custom/
 	sh compileRME
 install:
 	$(MAKE) -C kernel/ install
 	$(MAKE) -C upmtconf/ install
 	$(MAKE) -C upmt-appmon/ install
 	$(MAKE) -C java/upmt/src/ install
-	$(MAKE) -C netem/custom/ install
 
 clean:
 	$(MAKE) -C kernel/ clean
 	$(MAKE) -C upmtconf/ clean
 	$(MAKE) -C upmt-appmon/ clean
 	$(MAKE) -C java/upmt/src/ clean
-	$(MAKE) -C netem/custom/ clean
