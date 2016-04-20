@@ -20,8 +20,10 @@
 #define MAX_BUF_LEN 4096
 
 struct genl_msg{
-	struct nlmsghdr n;
-	struct genlmsghdr g;
+	struct nlmsghdr n;		//128 bit = 16 bytes
+	struct genlmsghdr g;	//32  bit = 8  bytes
+
+	//25 ---> 60
 	char buf[MAX_BUF_LEN];
 };
 
@@ -30,6 +32,8 @@ struct genl_msg{
 #define GENLMSG_NLA_NEXT(na) 		(((void *)(na)) + NLA_ALIGN(na->nla_len))
 #define GENLMSG_NLA_DATA(na) 		((void *)((char*)(na) + NLA_HDRLEN))
 #define GENLMSG_NLA_DATALEN(na) 	(na->nla_len - NLA_HDRLEN - 1)
+
+void init_data(void);
 
 int upmt_genl_client_init();
 
@@ -42,6 +46,7 @@ int send_verbose_command(int);
 int send_flush_command(char *);
 int send_mdl_command(const int, char *);
 int send_pdft_command(const int, const unsigned int, const int);
+int send_keepAlive_command(int, int, unsigned int, unsigned int);
 
 int receive_response();
 int parse_lst_nl_attrs();

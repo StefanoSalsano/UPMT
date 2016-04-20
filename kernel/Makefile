@@ -14,7 +14,7 @@ obj-y := upmt/ upmt-conntracker/
 EXTRA_CFLAGS="-I $(PWD)/upmt/include"
 INCLUDES="-I $(PWD)/upmt/include"
 
-KERNELDIR := /lib/modules/2.6.35.4-upmt/build
+KERNELDIR := /lib/modules/$(shell uname -r)/build
 PWD:= $(shell pwd)
 
 .PHONY: default install clean
@@ -29,5 +29,9 @@ install:
 	depmod -a
 
 clean:
+	sudo rm -rf /lib/modules/$(shell uname -r)/extra/upmt*
 	$(MAKE) -C $(KERNELDIR) M=$(PWD) clean
 	$(MAKE) -C upmt-conntracker/ plugins_clean
+
+deinstall:
+	sudo rm -rf /lib/modules/$(shell uname -r)/extra/upmt*

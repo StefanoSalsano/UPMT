@@ -81,7 +81,7 @@ upmt_update_paft(unsigned int hooknum, struct sk_buff *skb, const struct net_dev
 int upmt_s_init(void) {
 	int err = 0;
 
-	printk("UPMT-S extension initialized\n");
+	dmesg("UPMT-S extension initialized");
 
 	//UPMT-S hook for OUTgoing packets
 	hook_out = kzalloc(sizeof(struct nf_hook_ops), GFP_KERNEL);
@@ -124,7 +124,7 @@ void upmt_s_fini(void) {
 	nf_unregister_hook(hook_in);
 	nf_unregister_hook(hook_fwd);
 
-	printk("UPMT-S extension unloaded");
+	dmesg("UPMT-S extension unloaded");
 }
 
 MODULE_LICENSE("GPL");

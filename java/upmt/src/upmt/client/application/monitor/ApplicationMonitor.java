@@ -1,5 +1,7 @@
 package upmt.client.application.monitor;
 
+import upmt.client.UPMTClient;
+
 public interface ApplicationMonitor
 {
 	/** Set a listener for any socket list changing */
@@ -10,6 +12,7 @@ public interface ApplicationMonitor
 
 	//AppList
 	public void setApp(String appName, int tunnelID);
+	public void rmeSetAppAndVIPA (String appName, String VIPA, int tunnelID);
 	public void rmApp(String appName);
 	public void setDefault(int tunnelID);
 	public void flushAppList();
@@ -23,5 +26,8 @@ public interface ApplicationMonitor
 	public void setAppFlow(String dstIp, int tunnelID);
 	public void rmAppFlow(String dstIp, int port);
 	public void flushAppFlowList();
+	
+	//Signaler
+	public void setClient(UPMTClient upmtClient);
 
 }

@@ -6,15 +6,23 @@ public class AssociationReq implements Signal
 	public String sipId;
 	public String vipaToken;
 	public String[] addressInUse;
+	public String vipa;
 
 	public AssociationReq(){}
-	public AssociationReq(String sipId, String vipaToken, String[] addressInUse)
+	public AssociationReq(String sipId, String vipaToken, String[] addressInUse, String vipa)
 	{
 		this.sipId = sipId;
 		this.vipaToken = vipaToken;
 		this.addressInUse = addressInUse;
+		this.vipa = vipa;
 	}
 
+	public String getVipa() {
+		return vipa;
+	}
+	public void setVipa(String vipa) {
+		this.vipa = vipa;
+	}
 	public void setSipId(String sipId) {this.sipId = sipId;}
 	public String getSipId() {return sipId;}
 

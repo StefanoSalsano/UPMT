@@ -736,7 +736,7 @@ public class SipProvider implements Configurable, TransportListener
 	public TransportConnId sendMessage(Message msg)
 	{  printLog("Sending message:\r\n"+msg.toString(),Log.LEVEL_LOWER);
 
-	System.out.println("Sending message:\r\n"+msg.toString());
+	//System.out.println("Sending message:\r\n"+msg.toString());
 
 	// select the transport protocol
 	ViaHeader via=msg.getViaHeader();

@@ -6,8 +6,12 @@
  *	modify it under the terms of the GNU General Public License, either
  *	version 2 of the License, or any later version.
  */
+
+// Added module.h and kmod.h (Sander)
+
 #include <linux/ip.h>
 #include <linux/kernel.h>
+#include <linux/module.h>
 #include <linux/list.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
@@ -15,10 +19,11 @@
 #include <linux/netfilter_ipv4.h>
 #include <linux/netfilter/x_tables.h>
 #include <linux/netfilter_arp.h>
+#include <linux/kmod.h>
 #include <net/ip.h>
 #include <net/route.h>
-#include "compat_skbuff.h"
-#include "compat_xtnu.h"
+#include "../upmt/include/xt/compat_skbuff.h"
+#include "../upmt/include/xt/compat_xtnu.h"
 
 #if LINUX_VERSION_CODE <= KERNEL_VERSION(2, 6, 22)
 static int xtnu_match_run(const struct sk_buff *skb,

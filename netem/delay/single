@@ -1,0 +1,4 @@
+sleep 25
+sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay 200ms
+sleep 40
+sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay 100ms

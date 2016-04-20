@@ -11,17 +11,26 @@ import java.util.HashMap;
 import local.server.Proxy;
 import local.server.ServerProfile;
 
+import org.jsonref.JSONObject;
 import org.zoolu.sip.address.NameAddress;
+import org.zoolu.sip.address.SipURL;
 import org.zoolu.sip.message.Message;
 import org.zoolu.sip.message.MessageFactory;
 import org.zoolu.sip.provider.SipProvider;
+import org.zoolu.sip.provider.SipStack;
 import org.zoolu.sip.transaction.TransactionClient;
 import org.zoolu.sip.transaction.TransactionClientListener;
 import org.zoolu.sip.transaction.TransactionServer;
 import org.zoolu.tools.Log;
 
+import upmt.client.UPMTClient;
 import upmt.client.sip.SipSignalManager;
+import upmt.os.Module;
 import upmt.server.UPMTServer;
+import upmt.server.gui.AssociationInfo;
+import upmt.server.gui.TunnelInfo;
+import upmt.server.rme.RMEServer;
+import upmt.server.rme.RMETunnelInfo;
 import upmt.signaling.message.ANListReq;
 import upmt.signaling.message.ANListResp;
 import upmt.signaling.message.AssociationReq;
@@ -116,14 +125,14 @@ public class BaseUpmtEntity extends Proxy
 	/** When a new request request is received for the local UPMT server */
 	protected void processRequestToLocalUpmtServer(Message msg)
 	{
-		printLog("\n" + new java.util.Date() + " Handler: processRequestToUpmtServer", Log.LEVEL_LOWER);
-		printLog("\nMessage: " + msg.toString(), Log.LEVEL_LOWER);
+//		printLog("\n" + new java.util.Date() + " Handler: processRequestToUpmtServer", Log.LEVEL_LOWER);
+//		printLog("\nMessage: " + msg.toString(), Log.LEVEL_LOWER);
 		Signal[] reqSignalList = UpmtSignal.deSerialize(msg.getBody());
 		Signal[] respSignalList = new Signal[reqSignalList.length];
 		for (int i=0; i<reqSignalList.length; i++)
 		{
 			Signal reqSignal = reqSignalList[i];
-			Signal respSignal;
+			Signal respSignal = null;
 			if (reqSignal instanceof AssociationReq) respSignal = handleAssociation((AssociationReq)reqSignal);
 			else if (reqSignal instanceof TunnelSetupReq) respSignal = handleTunnelSetup((TunnelSetupReq)reqSignal);
 			else if (reqSignal instanceof HandoverReq) respSignal = handleHandover((HandoverReq)reqSignal);
@@ -149,17 +158,23 @@ public class BaseUpmtEntity extends Proxy
 				else {
 					Message resp = MessageFactory.createResponse(msg, 501, "not registered", null);
 					//printOverheadLog(resp.toString(), true, false, "");
+					
 					sip_provider.sendMessage(resp);
 					return;
 				}
 			}
 			else if (reqSignal instanceof KeepAlive) {
 				if(UPMTServer.SERVER_KEEP_ALIVE){
-
-					//printSimplifiedOverheadLog(msg.toString(), "tsa");
-
-					boolean alive = handleKeepAlive((KeepAlive)reqSignal); 
-
+					
+					boolean alive;
+					
+					if(UPMTClient.getRME()) {
+						alive = handleKeepAlive((KeepAlive)reqSignal, RMETunnelInfo.getRmeTunnelInfo(msg.getBody())); //TODO
+					}
+					else {
+						alive = handleKeepAlive((KeepAlive)reqSignal);
+					}
+					
 					if(alive){
 						//printSimplifiedOverheadLog(MessageFactory.createResponse(msg, 200, "OK", null).toString(), "tsa");
 						continue;
@@ -236,6 +251,7 @@ public class BaseUpmtEntity extends Proxy
 
 
 	protected boolean handleKeepAlive(KeepAlive req){return false;}
+	protected boolean handleKeepAlive(KeepAlive req, JSONObject msg){return false;}
 	protected boolean handleBrokerRegistration(BrokerRegistrationReq reqSignal) {return false;}
 	protected ANListResp handleANListReq(ANListReq reqSignal) {return null;}
 
@@ -257,7 +273,8 @@ public class BaseUpmtEntity extends Proxy
 	protected Message newUpmtMessage(NameAddress recipient, NameAddress from, Signal[] req) {
 		return newUpmtMessage(sip_provider, recipient, from, req);
 	}
-
+	
+	
 	protected Message startBlockingTransaction(Message message) {
 		return startBlockingTransaction(null, message);
 	}
@@ -288,27 +305,10 @@ public class BaseUpmtEntity extends Proxy
 		if (provider==null) {
 			provider = sip_provider;
 		}
-		//		class MessageContainer {Message msg;}
 		MessageContainer lock = new MessageContainer();
-
 		BlockingTransactionClientListener blockingTransactionClientListener = new BlockingTransactionClientListener();
 		blockingTransactionClientListener.setLock(lock);
-
 		TransactionClient transactionAgent = new TransactionClient(provider, message, blockingTransactionClientListener);
-
-
-		//		TransactionClient transactionAgent = new TransactionClient(provider, message, new TransactionClientListener()
-		//		{
-		//			private MessageContainer lock;
-		//			public TransactionClientListener setLock(MessageContainer l) {lock = l;return this;}
-		//			private void setMsg(Message msg){synchronized(lock){lock.msg = msg;lock.notify();}}
-		//
-		//			public void onTransProvisionalResponse(TransactionClient tc, Message msg) {}
-		//			public void onTransTimeout(TransactionClient tc) {setMsg(new NullMessage());}
-		//			public void onTransFailureResponse(TransactionClient tc, Message msg) {setMsg(new NullMessage());}
-		//			public void onTransSuccessResponse(TransactionClient tc, Message msg) {setMsg(msg);}
-		//
-		//		}.setLock(lock));
 
 		synchronized(lock) {
 			transactionAgent.request();

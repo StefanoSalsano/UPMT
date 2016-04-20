@@ -1,0 +1,29 @@
+#!/bin/bash
+
+d1=100ms
+d2=200ms
+d3=300ms
+time=5
+
+while true
+
+do
+	sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay $d1
+	echo "Delay at $d1 - Waiting $time seconds";
+	sleep $time
+
+	sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay $d2
+	echo "Delay at $d2 - Waiting $time seconds";
+	sleep $time
+
+	sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay $d3
+	echo "Delay at $d3 - Waiting $time seconds";
+	sleep $time
+
+	sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem delay $d2
+	echo "Delay at $d2 - Waiting $time seconds";
+	sleep $time
+done
+
+
+

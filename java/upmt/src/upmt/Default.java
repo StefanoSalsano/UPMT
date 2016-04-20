@@ -23,6 +23,12 @@ public class Default //TODO: refactorare tutto x mettere i nomi maiuscoli e con 
 	public static final String SBC_CONFIG_FILE = "cfg/server/sbc.cfg";
 	public static final String SERVER_CONFIG_FILE = "cfg/server/server.cfg";
 	public static final String RT_TABLE_PATH = "/etc/iproute2/rt_tables";
+	
+	//RME
+	public static final String RMECLIENT_CONFIG_FILE = "cfg/client/RMEclient.cfg";
+	public static final String RMESBC_CONFIG_FILE = "cfg/server/RMEsbc.cfg";
+	public static final String RMESERVER_CONFIG_FILE = "cfg/server/RMEserver.cfg";
+	public static final String  PEER_CONFIG_FILE = "cfg/peer/peer.cfg";
 
 
 
@@ -62,6 +68,9 @@ public class Default //TODO: refactorare tutto x mettere i nomi maiuscoli e con 
 	
 	public static final String CONFIG_KEEPALIVE_PERIOD_TAG = "keepalive_period";
 	public static final int CONFIG_KEEPALIVE_PERIOD = 10000;
+	// RME
+	public static final String CONFIG_KEEPALIVE_KERNEL = "keepalive_kernel";
+	public static final String CONFIG_KEEPALIVE_TIMEOUT = "keepalive_timeout";
 
 
 
@@ -90,11 +99,14 @@ public class Default //TODO: refactorare tutto x mettere i nomi maiuscoli e con 
 	public static final String isFH_TAG = "is_fh";
 	
 	//Radio Mulitple Eterogenee
-	public static final String rme_TAG = "rme";
-	public static final int rme = 1;
-	public static final String rmeConfig_TAG = "rme_config";
-	public static final String rme_interfaces_TAG = "rme_interfaces";
-	public static final String[] rmeIFS = {};
+	public static final String rme_app_policy_TAG = "rme_app_policy";
+	public static final String vepa_TAG = "rme_vepa";
+	public static final String rmeNet_TAG = "rme_net";
+	public static final String rmeOlsrd_TAG = "rme_olsrd";
+	public static final String rmeTsa_TAG = "rme_tsa";
+	public static final String adhocwlan_TAG = "adhoc_wlan";
+	public static final String ddsQosPort_TAG = "dds_qos_port";
+	public static final String interfaceBalance_TAG = "interface_balance";
 
 
 

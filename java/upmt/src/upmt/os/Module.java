@@ -1,5 +1,9 @@
 package upmt.os;
 
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+
 public class Module
 {
 	static
@@ -17,7 +21,41 @@ public class Module
 	public static String getServerIfName() {return serverIfName;}
 	public static void setServerIfName(String serverIfName) {Module.serverIfName = serverIfName;}
 
-	public static native String upmtconf(String[] param);
+	//public static native String upmtconf(String[] param);
+	
+	public static String upmtconf(String[] param){
+		return upmtconf(param, false);
+	}
+	
+	public static String upmtconf(String[] param, boolean isNative) {
+		String response = "";
+		if(!isNative) {
+			try {
+				String command ="upmtconf";
+				for(String singleParam: param) { command+=" "+singleParam; }
+//				System.err.println("richiesta a upmtconf ---> " + command);
+				Process p = Runtime.getRuntime().exec(command);
+				BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+				boolean check = true;
+				while(check) {
+					String line = br.readLine();
+					if(line!=null) {
+						response += "\n"+line;
+					}
+					else {
+						check = false;
+					}
+				}
+//				System.err.println("risposta da upmtconf ---> "+response);
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
+		}
+		else {
+			response = upmtconf(param);
+		}
+		return response;
+	}
 
 	public static int getUpmtParameter(String upmtRes, String parameter)
 	{

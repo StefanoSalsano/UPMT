@@ -1,0 +1,4 @@
+#!/bin/bash -x
+
+cd java/upmt/
+sudo java -jar RMEpeer.jar -Xmx500m

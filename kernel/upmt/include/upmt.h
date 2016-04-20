@@ -25,9 +25,20 @@
 /*JNI*/char buffer[10000];
 /*JNI*/#endif
 
+extern int AN;
 extern struct net_device *upmt_dev;
 
+extern struct nsproxy *upmtns; // Initializing namespace (Sander)
+
+#ifdef ANDROID
+	#define JAVA_APPNAME "com.and.gui"
+#else
+	#define JAVA_APPNAME "java"
+#endif
+
 extern unsigned int HEADROOM;
+extern unsigned int PIGGYROOM;
+extern unsigned int ADDROOM;
 extern unsigned int IP_HEADROOM;
 extern unsigned int UDP_HEADROOM;
 
@@ -38,7 +49,8 @@ extern unsigned int UDP_HEADROOM;
 #define UPMT_S_MARK 0x5432
 #define NO_UPMT_MARK 0xfafafafa
 
-extern struct net_device *upmt_dev;
+#define TUN_CLIENT_MODE	1
+#define TUN_SERVER_MODE	2
 
 //http://planetmath.org/encyclopedia/GoodHashTablePrimes.html
 static const unsigned int primes[] =  { 389, 769, 1543, 3079, 6151, 12289, 24593, 49157,
@@ -76,6 +88,57 @@ struct tun_param {
 	struct tun_remote 	tr;
 	struct inat 		in;
 	struct mark_dev 	*md;
+};
+
+struct keep_alive_info{
+	unsigned long client_id:32;
+	int client_tid:32;
+
+	/****************/
+
+	unsigned char Sc[3];
+	unsigned char Rc[3];
+
+	unsigned char Ss[3];
+	unsigned char Rs[3];
+
+	/***************/
+
+	unsigned long pSc;
+	unsigned long pRc;
+
+	unsigned long pSs;
+	unsigned long pRs;
+};
+
+struct keep_alive {
+	int state;
+	int toSend;
+	int computeLOSS;
+
+	unsigned long sent;
+	unsigned long recv;
+	unsigned long tstamp_sent;
+	unsigned long tstamp_recv;
+
+	//LOSS
+	//Client
+	//unsigned long pSc;
+	//unsigned long pRc;
+	unsigned long pSc_last;
+	unsigned long pRs_last;
+	unsigned long pSs_tmp;
+	unsigned long pRc_tmp;
+
+	//Server
+	//unsigned long pSs;
+	//unsigned long pRs;
+	unsigned long pSc_tmp;
+	unsigned long pRs_tmp;
+	unsigned long pSs_last;
+	unsigned long pRc_last;
+
+	struct keep_alive_info info;
 };
 
 struct mark_dev {

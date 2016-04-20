@@ -24,6 +24,7 @@
 package org.zoolu.tools;
 
 
+import java.util.ArrayList;
 import java.util.Vector;
 
 
@@ -430,6 +431,12 @@ public class Parser
       String[] array=new String[list.size()];
       for (int i=0; i<list.size(); i++) array[i]=(String)list.elementAt(i);
       return array;
+   }
+   /** **Valerio** Gets all strings of chars separated by any char belonging to <i>separators</i> */
+   public ArrayList<String> getWordArrayList(char[] separators)
+   {  ArrayList<String> list = new ArrayList<String>();
+      do { list.add(getWord(separators)); } while (hasMore());
+      return list;
    }
 
    //********************** Quoted Strings **********************

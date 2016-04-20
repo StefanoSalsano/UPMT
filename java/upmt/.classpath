@@ -1,8 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <classpath>
-	<classpathentry excluding="_dev/exSRC/upmt/client/application/|_dev/exSRC/upmt/client/application/interfPolicy/|_dev/exSRC/upmt/client/signaling/|_dev/exSRC/upmt/client/sip/|_dev/exSRC/upmt/server/UPMTServer.java|local/media/jmf/" kind="src" path="src"/>
 	<classpathentry kind="src" path="test"/>
-	<classpathentry kind="lib" path="lib/dbus.jar"/>
+	<classpathentry kind="src" path="src"/>
 	<classpathentry kind="lib" path="lib/junit.jar"/>
 	<classpathentry kind="lib" path="lib/matthew.jar"/>
 	<classpathentry kind="lib" path="lib/slf4j-api-1.5.6.jar"/>
@@ -16,5 +15,9 @@
 		</attributes>
 	</classpathentry>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
+	<classpathentry kind="lib" path="lib/jcommon-1.0.17.jar"/>
+	<classpathentry kind="lib" path="lib/jfreechart-1.0.14.jar"/>
+	<classpathentry kind="lib" path="lib/dbus-2.8.jar"/>
+	<classpathentry kind="lib" path="/home/upmt/upmt-devel/java/upmt/lib/jmf.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>

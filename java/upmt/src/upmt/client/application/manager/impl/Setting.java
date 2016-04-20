@@ -1,5 +1,6 @@
 package upmt.client.application.manager.impl;
 
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -18,8 +19,10 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.JTree;
+import javax.swing.UIManager;
 import javax.swing.border.EmptyBorder;
 import javax.swing.event.TreeSelectionEvent;
 import javax.swing.event.TreeSelectionListener;
@@ -35,7 +38,6 @@ import upmt.client.application.manager.ApplicationManagerListener;
 //TODO: Nella tab delle policy andrebbe scritto:
 //L'aggiunta o la modifica alla policy di un applicazione aperta in questa tab, avr� effetto al prossimo avvio dell'applicazione.
 //Per modificare dinamicamente la policy di un applicazione aperta, utilizzare la finestra principale.
-
 
 
 public class Setting extends JFrame
@@ -88,10 +90,6 @@ public class Setting extends JFrame
 
 	/**Create the frame.*/
 	
-//	new Setting(thiz.listener, thiz, thiz.listener.getCfgDefaultAN(), thiz.listener.getCfgSipID(), thiz.listener.getAllStoredPolicy(),
-//			thiz.listener.getDefaultPolicy(), thiz.listener.getNoUpmtApp(), thiz.listener.getNoUpmtInterf());
-	
-	
 	public Setting(ApplicationManagerListener amListener, GUIApplicationManager appMan)
 	{
 		this.listener = amListener;
@@ -127,7 +125,7 @@ public class Setting extends JFrame
 			}
 		});
 		setAlwaysOnTop(true);
-		setBounds(150, 150, 550, 400);
+		setBounds(350, 350, 650, 500);
 
 		contentPane = new JPanel();
 		contentPane.setBorder(new EmptyBorder(5, 5, 5, 5));
@@ -218,10 +216,10 @@ public class Setting extends JFrame
 		policyPanel.setOpaque(false);
 		tabbedPane.addTab("Application Policy", null, policyPanel, null);
 		GridBagLayout gbl_policyPanel = new GridBagLayout();
-		gbl_policyPanel.columnWidths = new int[]{0, 0, 0, 0};
-		gbl_policyPanel.rowHeights = new int[]{0, 0, 0, 0};
+		gbl_policyPanel.columnWidths = new int[]{455, 0, 0, 0};
+		gbl_policyPanel.rowHeights = new int[]{35, 73, 276, 0};
 		gbl_policyPanel.columnWeights = new double[]{1.0, 0.0, 0.0, Double.MIN_VALUE};
-		gbl_policyPanel.rowWeights = new double[]{0.0, 1.0, 0.0, Double.MIN_VALUE};
+		gbl_policyPanel.rowWeights = new double[]{0.0, 1.0, 1.0, Double.MIN_VALUE};
 		policyPanel.setLayout(gbl_policyPanel);
 
 		JLabel lblPolicy = new JLabel("Policy");
@@ -231,6 +229,19 @@ public class Setting extends JFrame
 		gbc_lblPolicy.gridx = 0;
 		gbc_lblPolicy.gridy = 0;
 		policyPanel.add(lblPolicy, gbc_lblPolicy);
+		
+		JTextArea txtrLaggiuntaOLa = new JTextArea();
+		txtrLaggiuntaOLa.setBackground(UIManager.getColor("Label.disabledShadow"));
+		txtrLaggiuntaOLa.setFont(new Font("Dialog", Font.BOLD, 12));
+		txtrLaggiuntaOLa.setToolTipText("");
+		txtrLaggiuntaOLa.setText("L'aggiunta o la modifica alla policy di un applicazione aperta in questa tabella, avrà \neffetto al prossimo avvio dell'applicazione.\nPer modificare dinamicamente la policy di un applicazione aperta, utilizzare la\nfinestra principale.");
+		GridBagConstraints gbc_txtrLaggiuntaOLa = new GridBagConstraints();
+		gbc_txtrLaggiuntaOLa.gridwidth = 3;
+		gbc_txtrLaggiuntaOLa.insets = new Insets(0, 0, 5, 5);
+		gbc_txtrLaggiuntaOLa.fill = GridBagConstraints.BOTH;
+		gbc_txtrLaggiuntaOLa.gridx = 0;
+		gbc_txtrLaggiuntaOLa.gridy = 1;
+		policyPanel.add(txtrLaggiuntaOLa, gbc_txtrLaggiuntaOLa);
 
 		JScrollPane policyPane = new JScrollPane();
 		GridBagConstraints gbc_policyPane = new GridBagConstraints();
@@ -238,7 +249,7 @@ public class Setting extends JFrame
 		gbc_policyPane.insets = new Insets(0, 0, 5, 0);
 		gbc_policyPane.fill = GridBagConstraints.BOTH;
 		gbc_policyPane.gridx = 0;
-		gbc_policyPane.gridy = 1;
+		gbc_policyPane.gridy = 2;
 		policyPanel.add(policyPane, gbc_policyPane);
 
 		
@@ -281,7 +292,7 @@ public class Setting extends JFrame
 		gbc_btnAddPolicy.anchor = GridBagConstraints.EAST;
 		gbc_btnAddPolicy.insets = new Insets(0, 0, 0, 5);
 		gbc_btnAddPolicy.gridx = 0;
-		gbc_btnAddPolicy.gridy = 2;
+		gbc_btnAddPolicy.gridy = 3;
 		policyPanel.add(btnAddPolicy, gbc_btnAddPolicy);
 		btnAddPolicy.addActionListener(new ActionListener() {public void actionPerformed(ActionEvent e)
 		{
@@ -308,7 +319,7 @@ public class Setting extends JFrame
 		GridBagConstraints gbc_btnEditPolicy = new GridBagConstraints();
 		gbc_btnEditPolicy.insets = new Insets(0, 0, 0, 5);
 		gbc_btnEditPolicy.gridx = 1;
-		gbc_btnEditPolicy.gridy = 2;
+		gbc_btnEditPolicy.gridy = 3;
 		policyPanel.add(btnEditPolicy, gbc_btnEditPolicy);
 		btnEditPolicy.addActionListener(new ActionListener() {public void actionPerformed(ActionEvent e)
 		{
@@ -337,7 +348,7 @@ public class Setting extends JFrame
 		btnRemovePolicy = new JButton("Remove");
 		GridBagConstraints gbc_btnRemovePolicy = new GridBagConstraints();
 		gbc_btnRemovePolicy.gridx = 2;
-		gbc_btnRemovePolicy.gridy = 2;
+		gbc_btnRemovePolicy.gridy = 3;
 		policyPanel.add(btnRemovePolicy, gbc_btnRemovePolicy);
 		btnRemovePolicy.addActionListener(new ActionListener() {
 			public void actionPerformed(ActionEvent e) {

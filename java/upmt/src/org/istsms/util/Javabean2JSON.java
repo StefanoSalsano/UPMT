@@ -17,7 +17,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
-*/
+ */
 
 package org.istsms.util;
 
@@ -46,7 +46,7 @@ public class Javabean2JSON {
 		primitiveType.put("java.lang.Long","long");
 		primitiveType.put("java.lang.Short","short");
 		primitiveType.put("java.lang.String", "java.lang.String");
-//		primitiveType.put("java.util.Calendar", "java.lang.String");
+		//		primitiveType.put("java.util.Calendar", "java.lang.String");
 		primitiveType.put("boolean","boolean");
 		primitiveType.put("byte","byte");
 		primitiveType.put("char","char");
@@ -56,7 +56,7 @@ public class Javabean2JSON {
 		primitiveType.put("long","long");
 		primitiveType.put("short","short");		
 	}
-	
+
 	private static boolean equalPrimitive(String canonicalName, String type) {	
 		String cN=(String)primitiveType.get(canonicalName);
 		String t=(String)primitiveType.get(type);
@@ -71,9 +71,9 @@ public class Javabean2JSON {
 	private static Object getPrimitive(Object value,String type) {
 		Object arg=null;
 		if (type.equals("boolean")||type.equals("java.lang.Boolean")) {
-			
+
 			arg=new Boolean(value.toString());
-			
+
 		} else if (type.equals("byte")||type.equals("java.lang.Byte")) {
 			arg=new Byte(value.toString());
 		} else if (type.equals("char")||type.equals("java.lang.Character")) {
@@ -83,7 +83,12 @@ public class Javabean2JSON {
 		} else if (type.equals("float")||type.equals("java.lang.Float")) {
 			arg=new Float(value.toString());
 		} else if (type.equals("int")||type.equals("java.lang.Integer")) {
-			arg=new Integer(value.toString());						
+			try {
+				arg=new Integer(value.toString());	
+			}
+			catch(NumberFormatException e) {
+				arg=new Long(value.toString());
+			}
 		} else if (type.equals("long")||type.equals("java.lang.Long")) {
 			arg=new Long(value.toString());						
 		} else if (type.equals("short")||type.equals("java.lang.Short")) {
@@ -91,11 +96,11 @@ public class Javabean2JSON {
 		} else if (type.equals("java.lang.String")) {
 			arg=value;
 		} 
-//		else if (type.equals("java.util.Calendar")) {
-//			java.util.Calendar c=java.util.Calendar.getInstance();
-//			c.setTime(new java.util.Date(Long.parseLong(value.toString())));
-//			arg=c;
-//		} 		
+		//		else if (type.equals("java.util.Calendar")) {
+		//			java.util.Calendar c=java.util.Calendar.getInstance();
+		//			c.setTime(new java.util.Date(Long.parseLong(value.toString())));
+		//			arg=c;
+		//		} 		
 		return arg;
 	}	
 
@@ -104,7 +109,7 @@ public class Javabean2JSON {
 	}
 
 	public static Object fromJSONObject(JSONObject jObj0, Class suggestion) {
-		
+
 		if ((suggestion!=null)&&(suggestion.equals(JSONObject.class))) return jObj0;	
 		JSONObject jObj=(JSONObject)jObj0;
 		Class c;
@@ -165,10 +170,16 @@ public class Javabean2JSON {
 							else {
 								if (value instanceof JSONObject) { 
 									arg=fromJSONObject((JSONObject)value,params[0]);
-								} else 
-									arg=getPrimitive(value,type);					
+								} else {
+									arg=getPrimitive(value,type);	
+								}
 							}
-							method.invoke(temp, new Object[]{arg});
+							try {//inserito da valerio bisogna sempre controllare la possibilita di errori
+								method.invoke(temp, new Object[]{arg});
+							}
+							catch (Exception e) {
+								return null;
+							}
 						}					
 					}
 				}
@@ -238,11 +249,11 @@ public class Javabean2JSON {
 		JSONObject temp=new JSONObject();
 		if (isPrimitive(obj.getClass().getCanonicalName())) {			
 			try {		
-					temp.put("__value", 
-							obj.toString());
-//							(obj instanceof java.util.Calendar)
-//							?""+((java.util.Calendar)obj).getTime().getTime()	
-//							:obj.toString());
+				temp.put("__value", 
+						obj.toString());
+				//							(obj instanceof java.util.Calendar)
+				//							?""+((java.util.Calendar)obj).getTime().getTime()	
+				//							:obj.toString());
 			} catch (JSONException e) {				
 				e.printStackTrace();
 			}
@@ -255,7 +266,7 @@ public class Javabean2JSON {
 	public static JSONArray toJSONArray(Object value) {
 		return _toJSONArray(value,value.getClass());
 	}
-	
+
 	private static JSONArray _toJSONArray(Object value, Class c) {
 		if (value==null) return null;
 		if (!c.isArray()) return null;
@@ -274,13 +285,13 @@ public class Javabean2JSON {
 							v.add(fromJavaCalendar((java.util.Calendar)element));
 						} else if (isPrimitive(element.getClass().getCanonicalName())) {
 							v.add(equalPrimitive(element.getClass().getCanonicalName(),suggestedComponentType)
-								  ?  
-								     element.toString()										
-//									 (element instanceof java.util.Calendar)
-//							   		 ?""+((java.util.Calendar)element).getTime().getTime()	
-//									 :element.toString()
-										  
-								  :toJSONObject(element));
+									?  
+											element.toString()										
+											//									 (element instanceof java.util.Calendar)
+											//							   		 ?""+((java.util.Calendar)element).getTime().getTime()	
+											//									 :element.toString()
+
+											:toJSONObject(element));
 						} else {											 
 							v.add(suggestedComponentType.equals(element.getClass().getCanonicalName())?
 									_toJSONObject(element):
@@ -305,7 +316,7 @@ public class Javabean2JSON {
 
 	private static void addAttributes(Object obj, Class c, JSONObject jObj) {		
 		//String objectClass=c.getCanonicalName();
-//		Method[] m=c.getDeclaredMethods();
+		//		Method[] m=c.getDeclaredMethods();
 		Method[] m=c.getMethods();
 		//Note: private and protected methods are not considered!
 		Method method;
@@ -382,9 +393,9 @@ public class Javabean2JSON {
 	private static void log(String s) {
 		//System.out.println("[Javabean2JSON] "+s);
 	}		
-	
+
 	//extra methods to manage java.util.Calendar serialization
-	
+
 
 	private static Object toJavaCalendar(JSONObject jo) {
 		if (jo==null) return null;
@@ -393,7 +404,7 @@ public class Javabean2JSON {
 				java.util.Calendar c=java.util.Calendar.getInstance();
 				c.setTime(new java.util.Date(Long.parseLong(jo.getString("__value"))));
 				c.setTimeZone(java.util.TimeZone.getTimeZone(jo.getString("__timezn")));
-			return c;	
+				return c;	
 			}								
 		} catch (JSONException e) {	
 			e.printStackTrace();		

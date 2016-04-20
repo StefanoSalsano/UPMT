@@ -1,0 +1,52 @@
+#!/bin/bash
+
+d0=0%
+d1=0.1%
+d2=1%
+d3=2%
+l0=0
+l1=0.001
+l2=0.01
+l3=0.02
+time=15
+logfile=loss_tstamp.txt
+
+sudo tc qdisc del dev eth0 root netem loss $d0
+sudo tc qdisc add dev eth0 root netem loss $d0
+echo "Loss at $d0 - Waiting $time seconds";
+sleep $time
+
+while true
+
+do
+	#sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem loss $d1
+	sudo tc qdisc change dev eth0 root netem loss $d1
+	tstamp=$(date +%s%N | cut -b1-13)
+	echo "$tstamp|$l1" >> $logfile
+	echo "Loss at $d1 - Waiting $time seconds";
+	sleep $time
+
+	#sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem loss $d2
+	sudo tc qdisc change dev eth0 root netem loss $d2
+	tstamp=$(date +%s%N | cut -b1-13)
+	echo "$tstamp|$l2" >> $logfile
+	echo "Loss at $d2 - Waiting $time seconds";
+	sleep $time
+
+	#sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem loss $d3
+	sudo tc qdisc change dev eth0 root netem loss $d3
+	tstamp=$(date +%s%N | cut -b1-13)
+	echo "$tstamp|$l3" >> $logfile
+	echo "Loss at $d3 - Waiting $time seconds";
+	sleep $time
+
+	#sudo tc qdisc change dev eth0 parent 1:11 handle 10: netem loss $d2
+	sudo tc qdisc change dev eth0 root netem loss $d2
+	tstamp=$(date +%s%N | cut -b1-13)
+	echo "$tstamp|$l2" >> $logfile
+	echo "Loss at $d2 - Waiting $time seconds";
+	sleep $time
+done
+
+
+

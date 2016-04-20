@@ -370,23 +370,46 @@ public class UPMTServer extends BaseUpmtEntity implements Configurable
 
 		int tunnelID = tunnelManager.getTunnelID(req.vipa, req.sipSignalingPort);
 
-		String[] yourAddressCouple = tunnelManager.getTunnelEndAddress(tunnelID).split(":");
+		TunnelSetupResp resp = null ;
+		resp = (TunnelSetupResp)UpmtSignal.createResp(req);
+		
+		if (tunnelID != -1) {
+			
+			String tunEndAddr = tunnelManager.getTunnelEndAddress(tunnelID);
+			String[] yourAddressCouple = null;
+			if (tunEndAddr!=null) {
+				yourAddressCouple = tunEndAddr.split(":");
+				
+				resp.serverTunnelID = tunnelID;
+				resp.yourAddress = yourAddressCouple[0];
+				resp.yourPort = Integer.parseInt(yourAddressCouple[1]);
+	
+				synchronized(tunnels){
+					Integer TID = new Integer(tunnelID);
+					TunnelInfo value = tunnels.get(TID);
+					if(value == null) {
+						value = new TunnelInfo(resp.serverTunnelID, resp.yourAddress, resp.yourPort, req.sipId, req.vipa, System.currentTimeMillis());
+					} else {
+						value.setLastAck(System.currentTimeMillis());
+					}
 
-		TunnelSetupResp resp = (TunnelSetupResp)UpmtSignal.createResp(req);
-		resp.serverTunnelID = tunnelID;
-		resp.yourAddress = yourAddressCouple[0];
-		resp.yourPort = Integer.parseInt(yourAddressCouple[1]);
-
-		synchronized(tunnels){
-			Integer TID = new Integer(tunnelID);
-			TunnelInfo value = tunnels.get(TID);
-			if(value == null)
-				value = new TunnelInfo(resp.serverTunnelID, resp.yourAddress, resp.yourPort, req.sipId, req.vipa, System.currentTimeMillis());
-			tunnels.put(TID, value);
+					tunnels.put(TID, value);
+				}
+	
+				printLog("tunnelID: "+tunnelID+"\nyourAddress: "+yourAddressCouple[0]+":"+yourAddressCouple[1]);
+				return resp;
+			} else {
+				printLog("ERROR: your address NULL" );
+				resp.serverTunnelID = tunnelID;
+				resp.yourAddress = "NULL";
+				return resp;				
+			}
+		} else {
+			printLog("ERROR: tunnelID=-1" );
+			resp.serverTunnelID = tunnelID;
+			return resp;
 		}
 
-		printLog("tunnelID: "+tunnelID+"\nyourAddress: "+yourAddressCouple[0]+":"+yourAddressCouple[1]);
-		return resp;
 	}
 
 
@@ -436,6 +459,12 @@ public class UPMTServer extends BaseUpmtEntity implements Configurable
 
 			if(assoc != null){
 				int tunnelID = tunnelManager.getTunnelID(assoc.getVipa(), req.sipSignalingPort);
+//				System.err.println("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
+//				System.err.println("--------------------------------> associations vipa----->"+req.sipSignalingPort);
+//				System.err.println("--------------------------------> associations vipa----->"+assoc.getVipa());
+//				System.err.println("--------------------------------> Tunnel ID req ------> "+req.tunnelId);
+//				System.err.println("--------------------------------> Tunnel ID tunnel ------> "+tunnelManager.getTunnelID(assoc.getVipa(), req.sipSignalingPort));
+//				System.err.println("++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++");
 				if(reqTunnelID == tunnelID){
 					assoc.setLastAck(System.currentTimeMillis());
 					alive = true;

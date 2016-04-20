@@ -2,6 +2,7 @@ package upmt.client.network;
 
 import java.util.Hashtable;
 
+import upmt.client.UPMTClient;
 import upmt.client.core.InterfaceInfo;
 
 public interface NetworkMonitor

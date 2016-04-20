@@ -8,6 +8,7 @@ public class AssociationResp implements Signal
 	public String sipId;
 	public int tsa;
 	public String reason;
+	public String[] addressesInUse;
 
 	public String getReason() {
 		return reason;
@@ -26,4 +27,13 @@ public class AssociationResp implements Signal
 	
 	public int getTsa() {return tsa;}
 	public void setTsa(int tsa) {this.tsa = tsa;}
+	
+	public String[] getAddressesInUse() {
+		return addressesInUse;
+	}
+	
+	public void setAddressesInUse(String[] addressesInUse) {
+		this.addressesInUse=addressesInUse;
+	}
+	
 }

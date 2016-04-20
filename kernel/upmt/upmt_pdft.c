@@ -30,7 +30,7 @@ int pdft_create(){
 
 	pdft = (struct pdft_table *) kzalloc(sizeof(struct pdft_table), GFP_KERNEL);
 	if(pdft == NULL){
-		printk("Error - Unable to allocate memory for pdft table");
+		dmesge("pdft_create - Unable to allocate memory for pdft table");
 		return -1;
 	}
 
@@ -39,7 +39,7 @@ int pdft_create(){
 
 	pdft->table = (struct pdft_entry **) vzalloc(sizeof(struct pdft_entry *) * pdft->dim);
 	if(pdft->table == NULL){
-		printk("Error - Unable to allocate memory for pdft table");
+		dmesge("pdft_create - Unable to allocate memory for pdft table");
 		return -1;
 	}
 
@@ -49,8 +49,6 @@ int pdft_create(){
 
 	pdft->collisions = 0;
 	pdft->overrides = 0;
-
-	printk("UPMT - pdft table created");
 
 	return 0;
 }
@@ -81,10 +79,7 @@ void pdft_erase(void){
 	pdft_flush();
 	vfree(pdft->table);
 	kfree(pdft);
-	printk("UPMT - pdft table erased");
 }
-
-
 
 /*
  *
@@ -108,7 +103,7 @@ static struct pdft_entry * pdft_insert_entry(const struct pdft_entry *e){
 	if(pdft->table[hash] == NULL){
 		pdft->table[hash] = (struct pdft_entry *) kzalloc(sizeof(struct pdft_entry), GFP_ATOMIC);
 		if(pdft->table[hash] == NULL){
-			printk("pdft_insert - Error - Unable to allocate memory for first new_entry");
+			dmesge("pdft_insert - Unable to allocate memory for first new_entry");
 			return NULL;
 		}
 		INIT_LIST_HEAD(&pdft->table[hash]->list);
@@ -127,7 +122,7 @@ static struct pdft_entry * pdft_insert_entry(const struct pdft_entry *e){
 	// otherwise add it
 	tmp = (struct pdft_entry *) kzalloc(sizeof(struct pdft_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("pdft_insert - Error - Unable to allocate memory for new_entry");
+		dmesge("pdft_insert - Unable to allocate memory for new_entry");
 		return NULL;
 	}
 

@@ -22,6 +22,19 @@ public interface AppMonitorProxy extends DBusInterface
 			this.tunnelID = tunnelID;
 		}
 	}
+	public static class RmeSetAppAnVipa extends Signal
+	{
+		public final String appName;
+		public final String VIPA;
+		public final int tunnelID;
+		public RmeSetAppAnVipa(String path, String appName, String VIPA, int tunnelID) throws DBusException
+		{
+			super(path, VIPA, appName, tunnelID);
+			this.appName = appName;
+			this.VIPA = VIPA;
+			this.tunnelID = tunnelID;
+		}
+	}
 	public static class RmApp extends Signal
 	{
 		public final String appName;

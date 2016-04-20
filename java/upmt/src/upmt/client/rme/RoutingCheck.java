@@ -1,49 +1,67 @@
 package upmt.client.rme;
+
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.StringTokenizer;
+import java.util.Timer;
+import java.util.TimerTask;
 
 import upmt.client.UPMTClient;
+import upmt.client.application.manager.impl.GUIApplicationManager;
 import upmt.os.Module;
 import upmt.os.Shell;
 
-
-public class RoutingCheck {
+public class RoutingCheck implements Runnable {
 
 	/**
 	 * @throws IOException 
 	 * @throws org.jsonref.JSONException 
 	 */
-	public static ParseJson parse;
-	public static ArrayList<String> Table = new ArrayList<String>();
-	static ThreadRouting t;
+	
 	public static String blankIp = "0.0.0.0";
 	
-	public static void initialize() {
-		parse = null;
-		try {
-			parse = new ParseJson();
-		} catch (org.jsonref.JSONException e) {
-			e.printStackTrace();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+	
+	private HashMap<String, String> addressIfnameTogateway = new HashMap<String, String>();
+	private HashMap<String, ArrayList<String>> localIfnameToaddresses = new HashMap<String, ArrayList<String>>(); 
+	private ArrayList<String> table = new ArrayList<String>();
+	private UPMTClient upmtClient;
+	private boolean interrupt;
+	private Thread threadRouting;
+	private OLSRChecker olsrChecker;
+	
+	public RoutingCheck(UPMTClient upmtClient) {
+		this.upmtClient = upmtClient;
+		this.table = new ArrayList<String>();
+		this.interrupt = false;
+		this.threadRouting = new Thread(this, "Thread di Routing");
+		this.olsrChecker = new OLSRChecker();
 	}
 	
-	public static void runMH() {
-		t = new ThreadRouting();
+	/**
+	 * Stop RME Routing Thread and delete netfilter rules
+	 */
+	public void stopRME() {
+		stop();
+		delRules();
 	}
 	
-	public static void stopMH() {
-		t.stop();
+	public void startRME() {
+		setRules();
+		System.out.println("ROUTING_CHECK: Thread di Routing creato");
+		threadRouting.start();
+		this.olsrChecker.init();
 	}
 	
-	public static HashMap<String, ArrayList<Route>> routeHash() throws IOException {
+	/**
+	 * Parse the main routing table
+	 * @return HashMap
+	 * @throws IOException
+	 */
+	public HashMap<String, ArrayList<Route>> routeHash() throws IOException {
 		Process p = Runtime.getRuntime().exec("netstat -rn");
 		BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
 		br.readLine();
@@ -112,39 +130,75 @@ public class RoutingCheck {
 		return routing;
 	}
 	
-	public static void manageTable(HashMap<String, ArrayList<Route>> routeHash) {
+	/**
+	 * Sets the new RME route for direct tunnels
+	 * @param routeHash
+	 */
+	public void manageTable(HashMap<String, ArrayList<Route>> routeHash) {
 		Iterator<String> destination = routeHash.keySet().iterator();
 		while(destination.hasNext()) {
 			String ifNameDest = destination.next();
 			for(int i=0; i<routeHash.get(ifNameDest).size(); i++) {
 				String dest = routeHash.get(ifNameDest).get(i).getIp();
 				String destgate = routeHash.get(ifNameDest).get(i).getGateway();
-				Iterator<String> gateway = routeHash.keySet().iterator();
-				while(gateway.hasNext()) {
-					String ifNameGate = gateway.next();
-					if(!ifNameDest.equals(ifNameGate)) {
-						for(int j=0; j<routeHash.get(ifNameGate).size(); j++) {
-							String gate = routeHash.get(ifNameGate).get(j).getGateway();
-							if(!dest.equals(gate) && !ifNameDest.equals(ifNameGate)) {
-								String sourceip = getIP(ifNameGate);
-								if(!existRoute(dest, gate, ifNameGate)) { 
-									if(trueRoute(destgate, gate)) { // to change trueRoute() ---> file json
-										Shell.executeCommand(new String[]{"sudo", "ip", "route", "add", dest, "via", gate, "dev", ifNameGate, "table", ifNameGate+"_table"});
-										Table.add(dest+"-"+gate+"-"+ifNameGate);
-//										System.err.println("Aggiunta la tripla "+dest+"-"+gate+"-"+ifNameGate);
-										String result = Module.upmtconf(new String[] { "-a", "dev", "-i", ifNameGate });
-										int mark = Module.getUpmtParameter(result, "Mark");
-										Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-A", "OUTPUT", "-p", "udp","--source", sourceip, "--dest", dest, "-j", "MARK", "--set-mark", ""+mark});
-//										System.err.println("sudo iptables -t mangle -A OUTPUT -p udp --source "+sourceip+" --dest "+dest+" -j MARK --set-mark "+mark);
-									}
-//									else {
-//										System.err.println("La tripla -> "+dest+"-"+gate+"-"+ifNameGate+" <- rotta inesistente");
-//									}
-								}
-//								else {
-//									System.err.println("La tripla -> "+dest+"-"+gate+"-"+ifNameGate+" <- è già esistente");
-//								}
+//				System.err.println("destination: "+dest+" gateway: "+destgate);
+				if(dest!=null && ifNameDest!=null && dest!=null) {
+					if(!existRoute(dest, destgate, ifNameDest)) {
+						Shell.executeCommand(new String[]{"sudo", "ip", "route", "add", dest, "via", destgate, "dev", ifNameDest, "table", ifNameDest+"_table"});
+						table.add(dest+"-"+destgate+"-"+ifNameDest);
+						String result = Module.upmtconf(new String[] { "-a", "dev", "-i", ifNameDest});
+						int mark = Module.getUpmtParameter(result, "Mark");
+						String sourceip = "";//= getIP(ifNameDest);
+						for(int z=0; z<UPMTClient.rmeAddresses.size(); z++) {
+							if(UPMTClient.rmeAddresses.get(z).getRmeInterface().equals(ifNameDest)) {
+								sourceip = UPMTClient.rmeAddresses.get(z).getIp();
+								break;
 							}
+						}
+						upmtClient.getRmeDirectTunnels().add(dest+":"+ifNameDest);
+						if(!localIfnameToaddresses.containsKey(ifNameDest)) {
+							localIfnameToaddresses.put(ifNameDest, new ArrayList<String>());
+						}
+						localIfnameToaddresses.get(ifNameDest).add(dest);
+						upmtClient.getOlsrDetectedEndPoint().add(dest);
+						Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-A", "OUTPUT", "-p", "udp","--source", sourceip, "--dest", dest, "-j", "MARK", "--set-mark", ""+mark});
+						System.out.println("[RoutingCheck] detected new RME Server Node "+ dest);
+						upmtClient.updateMsg("Detected new RME Server Node: "+dest);
+						if(!UPMTClient.textMode) {
+							((GUIApplicationManager) upmtClient.getApplicationManager()).refreshGui();
+						}
+						setPeerMode(dest, ifNameDest, destgate);
+					}
+				}				
+			}
+		}
+	}
+	
+	/**
+	 * Sets the new RME route for cross tunnels
+	 * @param routeHash
+	 */
+	public void crossTunnel(String endPoint, String ifname, String gateway) {
+		if(UPMTClient.ipToVipa.containsKey(endPoint)) {
+			String VIPA = UPMTClient.ipToVipa.get(endPoint);
+			String[] addressesInUseVipa = this.upmtClient.getDiscoveredaddresses(VIPA);
+			if(addressesInUseVipa!=null) {
+				for(String address: addressesInUseVipa) {
+					if(!address.equals(endPoint)) {
+						if(!existRoute(address, gateway, ifname)) {
+							Shell.executeCommand(new String[]{"sudo", "ip", "route", "add", address, "via", gateway, "dev", ifname, "table", ifname+"_table"});
+							table.add(address+"-"+gateway+"-"+ifname);
+							String result = Module.upmtconf(new String[] { "-a", "dev", "-i", ifname});
+							int mark = Module.getUpmtParameter(result, "Mark");
+							String sourceip = "";// = getIP(ifname); //FIXME
+							for(int z=0; z<UPMTClient.rmeAddresses.size(); z++) {
+								if(UPMTClient.rmeAddresses.get(z).getRmeInterface().equals(ifname)) {
+									sourceip = UPMTClient.rmeAddresses.get(z).getIp();
+									break;
+								}
+							}
+							Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-A", "OUTPUT", "-p", "udp","--source", sourceip, "--dest", address, "-j", "MARK", "--set-mark", ""+mark});
+							setPeerMode(address, ifname, gateway);
 						}
 					}
 				}
@@ -152,16 +206,15 @@ public class RoutingCheck {
 		}
 	}
 	
-	
 	/**
 	 * Function that cleans the table from obsolete addresses
 	 * @param routeHash
 	 */
-	public static void clearTable(HashMap<String, ArrayList<Route>> routeHash) {
-		for(int i=0; i <Table.size(); i++) {
+	public void clearTable(HashMap<String, ArrayList<Route>> routeHash) {
+		for(int i=0; i <table.size(); i++) {
 			boolean foundDest = false;
 			boolean foundGate = false;
-			StringTokenizer tok = new StringTokenizer(Table.get(i), "-");
+			StringTokenizer tok = new StringTokenizer(table.get(i), "-");
 			String dest = tok.nextToken();
 			String gate = tok.nextToken();
 			Iterator<String> itNet = routeHash.keySet().iterator();
@@ -180,18 +233,28 @@ public class RoutingCheck {
 			if(foundDest==false || foundGate==false) {
 				String ifName = tok.nextToken();
 				Shell.executeCommand(new String[]{"sudo", "ip", "route", "del", dest, "via", gate, "dev", ifName, "table", ifName+"_table"});
-				System.err.println("Rimuovo la tripla -> "+dest+"-"+gate+"-"+ifName);
+//				System.err.println("Rimuovo la tripla -> "+dest+"-"+gate+"-"+ifName);
 				String result = Module.upmtconf(new String[] { "-a", "dev", "-i", ifName });
 				int mark = Module.getUpmtParameter(result, "Mark");
 				for(int k=0; k<UPMTClient.getRMEInterfacesList().size(); k++) {
 					if(UPMTClient.getRMEInterfacesList().get(k).equals(ifName)) {
-						String sourceip = getIP(ifName);
+//						String sourceip = getIP(ifName); 
+						//FIXME
+						String sourceip = "";
+						for(int z=0; z<UPMTClient.rmeAddresses.size(); z++) {
+							if(UPMTClient.rmeAddresses.get(z).getRmeInterface().equals(ifName)) {
+								sourceip = UPMTClient.rmeAddresses.get(z).getIp();
+							}
+						}
+						if(upmtClient.getOlsrDetectedEndPoint().contains(dest)) {
+							upmtClient.getOlsrDetectedEndPoint().remove(dest);
+						}
 						Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-D", "OUTPUT", "-p", "udp","--source", sourceip, "--dest", dest, "-j", "MARK", "--set-mark", ""+mark});
-						System.err.println("sudo iptables -t mangle -D OUTPUT -p udp --source "+sourceip+" --dest "+dest+" -j MARK --set-mark "+mark);
+//						System.err.println("sudo iptables -t mangle -D OUTPUT -p udp --source "+sourceip+" --dest "+dest+" -j MARK --set-mark "+mark);
 						break;
 					}
 				}
-				Table.remove(i);
+				table.remove(i);
 				i=i-1;
 			}
 		}
@@ -204,9 +267,12 @@ public class RoutingCheck {
 	 * @param ifName
 	 * @return boolean
 	 */
-	public static boolean existRoute(String destip, String ip, String ifName) {
-		for(int i=0; i<Table.size(); i++) {
-			if(Table.get(i).equals(destip+"-"+ip+"-"+ifName)) {
+	public boolean existRoute(String destip, String ip, String ifName) {
+		for(int i=0; i<table.size(); i++) {
+			if(table.get(i).equals(destip+"-"+ip+"-"+ifName)) {
+				if(!upmtClient.getOlsrDetectedEndPoint().contains(destip)) {
+					upmtClient.getOlsrDetectedEndPoint().add(destip);
+				}
 				return true;
 			}
 		}
@@ -219,27 +285,24 @@ public class RoutingCheck {
 	 * @param gate
 	 * @return boolean
 	 */
-	public static boolean trueRoute(String dest, String gate) {
-		Iterator<String> itmap = parse.getJmap().keySet().iterator();
-		while(itmap.hasNext()) {
-			String vip = itmap.next();
-			for(int j=0; j<parse.getJmap().get(vip).size(); j++) {
-				String ip = parse.getJmap().get(vip).get(j).getIp();
-				if(ip.equals(dest)) { // found destination in the json file
-					for(int i=0; i<parse.getJmap().get(vip).size(); i++) {
-						String ip2 = parse.getJmap().get(vip).get(i).getIp();
-						if(!ip.equals(ip2) && ip2.equals(gate)) {
-							return true;
-						}
-					}
-				}
+	public boolean trueRoute(String dest, String gate) {
+		if(UPMTClient.ipToVipa.containsKey(dest) && UPMTClient.ipToVipa.containsKey(dest)) {
+			String vipaDest = UPMTClient.ipToVipa.get(dest);
+			String vipaGate = UPMTClient.ipToVipa.get(gate);
+			if(vipaDest.equals(vipaGate)) {
+				return true;
+			}
+			else {
+				return false;
 			}
 		}
-		return false;
+		else {
+			return false;
+		}
 	}
 	
 	/**
-	 * Function that returns the integere on ip address
+	 * Function that returns the integer on ip address
 	 * @param ip
 	 * @return
 	 */
@@ -271,16 +334,188 @@ public class RoutingCheck {
 			ip = br.readLine();
 			p.waitFor();
 		} catch (IOException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		} catch (InterruptedException e) {
-			// TODO Auto-generated catch block
 			e.printStackTrace();
 		}
-		StringTokenizer tok = new StringTokenizer(ip.substring(9));
-		ip = tok.nextToken("/");
+		if(ip==null || ip.length()<9) {
+			ip = RoutingCheck.blankIp;
+		}
+		else {
+			StringTokenizer tok = new StringTokenizer(ip.substring(9));
+			ip = tok.nextToken("/");
+		}
 		
 		return ip;
 	}
 	
+	/**
+	 * Set the Netfilter tables (mangle, nat and filter) the rules used to forward packets
+	 */
+	public void setRules() {
+		for(int i=0; i<UPMTClient.getRMEInterfacesList().size(); i++) {
+			String sourceip = getIP(UPMTClient.getRMEInterfacesList().get(i));
+			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-A", "PREROUTING", "-p", "udp", "!", "--dest", sourceip, "-j", "MARK", "--set-mark", "0xfafafafa"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "nat", "-A", "PREROUTING", "!", "--dest", sourceip, "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "nat", "-A", "POSTROUTING", "!", "--dest", sourceip, "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "filter", "-A", "FORWARD", "-i", UPMTClient.getRMEInterfacesList().get(i), "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "filter", "-A", "FORWARD", "-o", UPMTClient.getRMEInterfacesList().get(i), "-j", "ACCEPT"});
+		}
+	}
+	
+	/**
+	 * Delete from Netfilter tables(mangle, nat and filter) the rules used to mark and forward packets
+	 */
+	public void delRules() {
+		for(int i=0; i<UPMTClient.getRMEInterfacesList().size(); i++) {
+			String sourceip = getIP(UPMTClient.getRMEInterfacesList().get(i));
+			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-D", "PREROUTING", "-p", "udp", "!", "--dest", sourceip, "-j", "MARK", "--set-mark", "0xfafafafa"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "nat", "-D", "PREROUTING", "!", "--dest", sourceip, "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "nat", "-D", "POSTROUTING", "!", "--dest", sourceip, "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "filter", "-D", "FORWARD", "-i", UPMTClient.getRMEInterfacesList().get(i), "-j", "ACCEPT"});
+//			Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "filter", "-D", "FORWARD", "-o", UPMTClient.getRMEInterfacesList().get(i), "-j", "ACCEPT"});
+			for(int k=0; k<table.size(); k++) {
+				StringTokenizer tok = new StringTokenizer(table.get(k), "-");
+				String dest = tok.nextToken(); tok.nextToken(); /* ex String gate*/ 
+				String ifname = tok.nextToken();
+				if(ifname.equals(UPMTClient.getRMEInterfacesList().get(i))) {
+					String result = Module.upmtconf(new String[] { "-a", "dev", "-i", UPMTClient.getRMEInterfacesList().get(i) });
+					int mark = Module.getUpmtParameter(result, "Mark");
+					Shell.executeCommand(new String[]{"sudo", "iptables", "-t", "mangle", "-D", "OUTPUT", "-p", "udp","--source", sourceip, "--dest", dest, "-j", "MARK", "--set-mark", ""+mark});
+				}
+			}
+		}
+	}
+	
+	public synchronized void setPeerMode(String aNAddress, String ifNameDest, String gateway) {
+		if(UPMTClient.ipToVipa.containsKey(aNAddress)) {
+			String VIP = UPMTClient.ipToVipa.get(aNAddress);
+			PeerMode peerMode = new PeerMode(this.upmtClient, VIP, aNAddress, UPMTClient.cfg.vepa, ifNameDest);
+			peerMode.setPeerMode();
+			if(UPMTClient.crossTunnel) {
+				this.crossTunnel(aNAddress, ifNameDest, gateway);
+			}
+		}
+		else {
+			synchronized (upmtClient.getTunnelProviders()) {
+				if (!UPMTClient.getCfgANList().contains(aNAddress)) {
+					if(UPMTClient.blockerAssociation) {
+						synchronized (upmtClient.getSignaler().getCurrentAssociations()) {
+							if(!upmtClient.getSignaler().getCurrentAssociations().contains(aNAddress+":"+ifNameDest)) {
+								//					UPMTClient.addCfgAnlist(aNAddress);
+//								System.err.println("AN----_>  "+aNAddress);
+								this.upmtClient.setANSipPort(aNAddress, new Integer(5060));
+								this.upmtClient.rmeAnAssociation(aNAddress, ifNameDest);
+							}
+						}
+					}
+					else {
+						if(!upmtClient.getSignaler().getCurrentAssociations().contains(aNAddress+":"+ifNameDest)) {
+							//					UPMTClient.addCfgAnlist(aNAddress);
+							this.upmtClient.setANSipPort(aNAddress, new Integer(5060));
+							this.upmtClient.rmeAnAssociation(aNAddress, ifNameDest);
+						}
+					}
+				}
+			}
+			if(UPMTClient.blockerAssociation) {
+//				setPeerMode(aNAddress, ifNameDest, gateway);
+				tryToSetPeerMode(aNAddress, ifNameDest, gateway);
+			}
+			else {
+				tryToSetPeerMode(aNAddress, ifNameDest, gateway);
+			}
+		}
+	}
+	
+	public void tryToSetPeerMode(final String aNAddress,final String ifNameDest,final String gateway) {
+		new Timer().schedule(new TimerTask() {
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				setPeerMode(aNAddress, ifNameDest, gateway);
+			}
+//		}, SipSignalManager.CLIENT_KEEP_ALIVE_INTERVAL);
+		}, 5000);
+	}
+	
+	
+	public synchronized void setPeerMode(String aNAddress) {
+
+		if(UPMTClient.ipToVipa.containsKey(aNAddress)) {
+			String VIP = UPMTClient.ipToVipa.get(aNAddress);
+			PeerMode peerMode = new PeerMode(this.upmtClient, VIP, aNAddress, UPMTClient.cfg.vepa);
+			peerMode.setPeerMode();
+		}
+	}
+	
+	public boolean isCrossTunnelAvailable(String address, String ifName) {
+		boolean isAvailable = false;
+		if(upmtClient.getOlsrDetectedEndPoint().contains(address)) {
+			String vipa = upmtClient.getVipa(address);
+			if(localIfnameToaddresses.containsKey(ifName)) {
+				for(String remoteIP: localIfnameToaddresses.get(ifName)) {
+					String vipaCheck = upmtClient.getVipa(remoteIP);
+					if(vipa!=null && vipaCheck!=null && vipa.equals(vipaCheck) && upmtClient.getOlsrDetectedEndPoint().contains(remoteIP)) {
+						isAvailable = true;
+						break;
+					}
+				}
+			}
+		}
+		return isAvailable;
+	}
+
+	public UPMTClient getUpmtClient() {
+		return this.upmtClient;
+	}
+
+	public void setUpmtClient(UPMTClient upmtClient) {
+		this.upmtClient = upmtClient;
+	}
+
+	public HashMap<String, String> getAddressIfnameTogateway() {
+		return addressIfnameTogateway;
+	}
+
+	public void setAddressIfnameTogateway(HashMap<String, String> addressIfnameTogateway) {
+		this.addressIfnameTogateway = addressIfnameTogateway;
+	}
+
+	public OLSRChecker getOlsrChecker() {
+		return olsrChecker;
+	}
+
+	public void setOlsrChecker(OLSRChecker olsrChecker) {
+		this.olsrChecker = olsrChecker;
+	}
+
+	@Override
+	public void run() {
+		try {
+			while(!interrupt) {
+				try {
+					HashMap<String, ArrayList<Route>> routehash = routeHash();
+					clearTable(routehash);
+					manageTable(routehash);
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
+				Thread.sleep(10000);
+			}
+		}
+		catch (InterruptedException e) {
+			System.out.println("ROUTING_CHECK: Thread di Routing interrotto");
+		}
+		System.out.println("ROUTING_CHECK: Uscita Thread di Routing");
+		
+	}
+	
+	/**
+	 * Stops the RME routing thread
+	 */
+	public void stop() {
+		this.interrupt=true;
+	}
+
 }

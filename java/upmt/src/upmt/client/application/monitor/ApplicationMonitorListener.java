@@ -8,4 +8,7 @@ public interface ApplicationMonitorListener
 	public void socketOpened(String appName, Socket socket);
 	public void socketClosed(Socket socket);
 	public void appClosed(String appName);
+	//(bonus)
+	public boolean isActiveApp(String appName);
+	public String getAppnameFromSocket(Socket socket);
 }

@@ -1,0 +1,113 @@
+# ***********************************************************************************************************************
+# *********************************************** BEE SAFE configuration ************************************************
+# ***********************************************************************************************************************
+
+# ***************************************************
+# ************* RME CONFIGURATION *******************
+# ***************************************************
+
+#tsa port for incoming tunnel setup
+rme_tsa = 50000
+
+# tsa port for outgoing tunnels
+start_port=55000
+range_port=10000
+
+#DDS qos port
+dds_qos_port=23000
+
+#rme identifier
+rme_vepa = 10.0.0.1
+
+#ifname:ipaddr/netmask
+rme_net = eth0:192.168.0.1/24 eth1:192.168.1.1/24
+#rme_net = eth0:192.168.0.2/24 eth1:192.168.1.2/24 eth2:192.168.2.2/24
+
+#ifname:ssid:channel
+adhoc_wlan = wlan0:net1:6
+
+#If 'yes' Balances the load on the interfaces
+interface_balance = yes
+
+rme_app_policy=nc bestTunnel
+rme_app_policy=java bestTunnel
+
+rme_olsrd = /home/upmt/upmt-devel/java/upmt/cfg/peer/olsrconf/eth0.conf
+rme_olsrd = /home/upmt/upmt-devel/java/upmt/cfg/peer/olsrconf/eth1.conf
+rme_olsrd = /home/upmt/upmt-devel/java/upmt/cfg/peer/olsrconf/eth2.conf
+
+
+#****************************************************
+# *************** SIP CONFIGURATION *****************
+# ***************************************************
+
+# ******** Signaler **********
+
+#SERVER port comunication
+host_port=5060
+transport_protocols=udp tcp
+
+#SBC port comunication
+upmt_server_port=5066
+
+# ******** Virtual Interface parameter **********
+
+# Port of the virtual interface used for sip signaling.
+port_for_tunnelled_sip=40000
+
+#****************************************************
+# ************* BASIC CONFIGURATION *****************
+# ***************************************************
+
+# ************** Logger **************
+# Specifies the log filename. If it is not specified or file cannot be opened,
+# standard output is used for logging.
+log_file=log/peer.log
+
+location_db=cfg/peer/peer.db
+
+# Specifies log level. Possible values are 0 (little detailed log level),
+# 1 (quite detailed log level) and 2 (very detailed log level).
+# Default value is 2
+log_level=0
+
+# Mtu value (overrides the one that is set by the kernel module)
+# if set to 0 or not present, the kernel mtu value is not overriden
+mtu_override=1400
+
+# ******** Peer Client Side **********
+
+#keepalive mode if yes in kernel space if no in userspace
+keepalive_kernel = yes
+
+#keepalive interval
+keepalive_period = 5000
+
+#keepalive timeout
+keepalive_timeout = 15000
+
+net_monitor=LinuxDBus
+app_manager=GUI
+app_monitor=Socket
+#app_monitor=DBus
+#extended_filter=0 no extended filter extended_filter=1 extended filter
+extended_filter=1
+
+#Mark no upmt packet
+no_upmt_packet_mark=0xfafafafa
+
+#ServerMark
+server_mark=7
+
+#Interface NOT under BEE SAFE control
+no_upmt_ifs = eth3 ppp4
+
+#Policy to use for unspecified application.
+#default_app_policy=POLICY_NAME    policyParamList    (default: "Random")
+default_app_policy = PriorityList eth0 eth1 eth2 wlan0 any 
+
+#Policy to select the interface used for upmt signaling (initial-association(ANDREA!!! Controllare!!!) and register)
+#signaling_policy=POLICY_NAME    policyParamList    (default: same-of-default_app_policy)
+signaling_policy=PriorityList    eth0    eth1   eth2  wlan0    any
+
+################################################################################################

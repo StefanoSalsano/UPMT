@@ -1,8 +1,10 @@
 package upmt.client.application.monitor.impl;
 
+import upmt.client.UPMTClient;
 import upmt.client.application.monitor.ApplicationMonitor;
 import upmt.client.application.monitor.ApplicationMonitorListener;
 import upmt.client.core.Socket;
+import upmt.client.sip.SipSignalManager;
 
 /**
  *  this is only used for development purpose 
@@ -41,4 +43,11 @@ public class TestApplicationMonitor implements ApplicationMonitor
 	public void setAppFlow(String dstIp, int tunnelID) {}
 	public void rmAppFlow(String dstIp, int port) {}
 	public void flushAppFlowList() {}
+	@Override
+	public void rmeSetAppAndVIPA(String appName, String VIPA, int tunnelID) {}
+	@Override
+	public void setClient(UPMTClient upmtClient) {
+		// TODO Auto-generated method stub
+		
+	}
 }

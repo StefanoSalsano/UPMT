@@ -1,0 +1,5 @@
+#!/bin/bash -x
+
+cd java/upmt/
+ant -buildfile peerBuild.xml
+ant -buildfile build.xml

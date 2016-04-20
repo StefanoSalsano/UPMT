@@ -12,6 +12,7 @@
 #include <linux/module.h>
 #include <linux/string.h>
 #include <linux/skbuff.h>
+#include <linux/utsname.h>
 #include <linux/inetdevice.h>
 #include "include/upmt_mdl.h"
 
@@ -74,14 +75,14 @@ int set_upmt_key_from_skb(struct upmt_key *upmt_key, struct sk_buff *skb, int of
 
 #if 0
 #ifdef UPMT_S
-		printk("DEBUG");
+		dmesg("DEBUG");
 		upmt_key->proto = skb->upmt_flow.ip_proto;
 		
-		printk("\tsaddr: %d.%d.%d.%d,   saddr_vero: %d.%d.%d.%d", 
+		dmesg("\tsaddr: %d.%d.%d.%d,   saddr_vero: %d.%d.%d.%d", 
 				NIPQUAD(skb->upmt_flow.ip_src), NIPQUAD(skb->upmt_flow.ip_src));
 
 		upmt_key->daddr = skb->upmt_flow.ip_dst;
-		printk(" lport %d, rport %d\n",ntohs(skb->upmt_flow.src_port),ntohs(skb->upmt_flow.dst_port));
+		dmesg(" lport %d, rport %d",ntohs(skb->upmt_flow.src_port),ntohs(skb->upmt_flow.dst_port));
 #endif
 #endif
 
@@ -145,29 +146,32 @@ void set_tun_local(struct tun_local *tl, const int ilink, const unsigned int por
 
 void set_tun_local_from_skb(struct tun_local *tl, const struct sk_buff *skb){
 
-	struct udphdr *udp_header;
-#ifdef RME
-	struct net_device* dev_f;
 	struct iphdr *ip_header;
+	struct udphdr *udp_header;
+	struct net_device* dev;
 
-	ip_header = get_IP_header(skb);
-	
-	if(((dev_f = search_dev_by_ip(ip_header->daddr))!=NULL) && (skb->skb_iif!=dev_f->ifindex)){
-		tl->ifindex = dev_f->ifindex;
-	}
-	else {
-#endif
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(2,6,33)
 	
-		tl->ifindex = skb->skb_iif;
+	tl->ifindex = skb->skb_iif;
 #else
-		tl->ifindex = skb->iif;
+	tl->ifindex = skb->iif;
 #endif
-#ifdef RME
-	}
-#endif
+
 	udp_header = get_UDP_header(skb);
 	tl->port = ntohs(udp_header->dest);
+
+	//Fabio Patriarca 16/09/2013
+	ip_header = get_IP_header(skb);
+	dev = search_dev_by_ip(ip_header->daddr);
+
+	if(dev == NULL){
+		printk("/**********/\n");
+		dmesg("saddr: %pI4 daddr: %pI4", &ip_header->saddr,&ip_header->daddr);
+		dmesge("set_tun_local_from_skb - dev = NULL");
+		printk("/**********/\n");
+	}
+
+	if(dev != NULL) tl->ifindex = dev->ifindex;
 }
 
 void tun_local_copy(struct tun_local *a, const struct tun_local *b){
@@ -209,13 +213,17 @@ void tun_param_copy(struct tun_param *a, const struct tun_param *b){
 	memcpy(a, b, sizeof(struct tun_param));
 }
 
+void keepAlive_data_copy(struct tun_param *a, const struct tun_param *b){
+	memcpy(a, b, sizeof(struct tun_param));
+}
+
 int umpt_tun_param_equals(const struct tun_param *a, const struct tun_param *b){
 	int res;
 	res = memcmp(a, b, (sizeof(struct tun_param)));
-	printk("\n\t -------- CONFRONTO ----------");
+	dmesg("\t -------- CONFRONTO ----------");
 	print_upmt_tun_param(a);
 	print_upmt_tun_param(b);
-	printk("\n\t -------- RISPOSTA ----------> %d", res);
+	dmesg("\t -------- RISPOSTA ----------> %d", res);
 
 	return memcmp(a, b, (sizeof(struct tun_param)));
 }
@@ -226,51 +234,112 @@ int umpt_tun_param_equals(const struct tun_param *a, const struct tun_param *b){
 	print_upmt_tun_remote(&tp->tun_remote);
 }*/
 
+void dmesg_lbl(char *l1, char *l2){
+	dmesg("%s\t------------------------------------------- %s", l1, l2);
+}
+
 void print_packet_information(struct sk_buff *skb, unsigned int offset){
 	struct iphdr *ip_header;
 	struct udphdr *udp_header;
 	struct tcphdr *tcp_header;
 	struct icmphdr *icmp_header;
+	unsigned char *result = NULL;
 
 	if(skb == NULL){
-		printk("PUNTATORE NULL\n");
+		dmesge("print_packet_information - NULL POINTER");
 		return;
 	}
-	skb_pull(skb, offset);
+	result = skb_pull(skb, offset);
+	if(result == NULL){
+		dmesge("print_packet_information - skb_pull = NULL");
+		//skb_push(skb, offset);
+		return;
+	}
 
 	ip_header =	get_IP_header(skb);
+	
+	//dmesg("packet of interface with ifindex : %i", skb->dev->ifindex);
 
-	printk("\n");
-	//printk("\t IPv: %u", ip_header->version);
-	//printk(" - TotLen: %u", ntohs(ip_header->tot_len));
+	dmesg("\t IPv: %u", ip_header->version);
+	//dmesg(" - TotLen: %u", ntohs(ip_header->tot_len));
 
-	printk(" saddr: %d.%d.%d.%d", NIPQUAD(ip_header->saddr));
-	printk(" daddr: %d.%d.%d.%d\t", NIPQUAD(ip_header->daddr));
+	// since 2.6.36 NIPQUAD has been removed, you must use %pI4 to print ipv4 addresses (Sander)
+	dmesg("saddr: %pI4 daddr: %pI4", &ip_header->saddr,&ip_header->daddr);
 
-	//printk("\tProtocol %u", ip_header->protocol);
+	//dmesg("\tProtocol %u", ip_header->protocol);
 
 	if (ip_header->protocol == IPPROTO_TCP){
 		tcp_header = get_TCP_header(skb);
-		printk("| TCP");
-		printk("\tsrc: %u", ntohs(tcp_header->source));
-		printk("\tdst: %u", ntohs(tcp_header->dest));
-		//printk("\tlen: %u", (tcp_header->doff)*4);
+		dmesg("TCP src: %u dst: %u mark: %u", ntohs(tcp_header->source), ntohs(tcp_header->dest),skb->mark);
+		//dmesg("\tlen: %u", (tcp_header->doff)*4);
 	}
 
 	if (ip_header->protocol == IPPROTO_UDP){
 		udp_header = get_UDP_header(skb);
-		printk("| UDP");
-		printk("\tsrc: %u", ntohs(udp_header->source));
-		printk("\tdst: %u", ntohs(udp_header->dest));
-		//printk("\tlen: %u", ntohs(udp_header->len));
-		//printk("\tCHECKSUM: %u", udp_header->check);
+		dmesg("UDP src: %u dst: %u mark: %u", ntohs(udp_header->source), ntohs(udp_header->dest),skb->mark);
+
+		//dmesg("\tlen: %u", ntohs(udp_header->len));
+		//dmesg("\tCHECKSUM: %u", udp_header->check);
 	}
 
 	if (ip_header->protocol == IPPROTO_ICMP){
-		printk("| ICMP");
+		dmesg("ICMP");
 		icmp_header = (struct icmphdr *) skb_transport_header(skb);
 	}
-	printk("\tmark: %u", skb->mark);
+	skb_push(skb, offset);
+}
+
+void print_packet_information2(struct sk_buff *skb, unsigned int offset){
+	struct iphdr *ip_header;
+	struct udphdr *udp_header;
+	struct tcphdr *tcp_header;
+	struct icmphdr *icmp_header;
+	unsigned char *result = NULL;
+
+	if(skb == NULL){
+		dmesge("print_packet_information - NULL POINTER");
+		return;
+	}
+	result = skb_pull(skb, offset);
+	if(result == NULL){
+		dmesge("print_packet_information - skb_pull = NULL");
+		//skb_push(skb, offset);
+		return;
+	}
+
+	ip_header =	get_IP_header(skb);
+	//ip_header =	ip_hdr(skb);
+
+	//dmesg("packet of interface with ifindex : %i", skb->dev->ifindex);
+
+	//dmesg("\t IPv: %u", ip_header->version);
+	//dmesg(" - TotLen: %u", ntohs(ip_header->tot_len));
+
+	// since 2.6.36 NIPQUAD has been removed, you must use %pI4 to print ipv4 addresses (Sander)
+	dmesg("saddr: %pI4 daddr: %pI4", &ip_header->saddr,&ip_header->daddr);
+
+	//dmesg("\tProtocol %u", ip_header->protocol);
+
+	if (ip_header->protocol == IPPROTO_TCP){
+		tcp_header = tcp_hdr(skb);
+		tcp_header = get_TCP_header(skb);
+		dmesg("TCP src: %u dst: %u mark: %u", ntohs(tcp_header->source), ntohs(tcp_header->dest),skb->mark);
+		//dmesg("\tlen: %u", (tcp_header->doff)*4);
+	}
+
+	if (ip_header->protocol == IPPROTO_UDP){
+		udp_header = udp_hdr(skb);
+		udp_header = get_UDP_header(skb);
+		dmesg("UDP src: %u dst: %u mark: %u", ntohs(udp_header->source), ntohs(udp_header->dest),skb->mark);
+
+		//dmesg("\tlen: %u", ntohs(udp_header->len));
+		//dmesg("\tCHECKSUM: %u", udp_header->check);
+	}
+
+	if (ip_header->protocol == IPPROTO_ICMP){
+		dmesg("ICMP");
+		icmp_header = (struct icmphdr *) skb_transport_header(skb);
+	}
 	skb_push(skb, offset);
 }
 
@@ -286,12 +355,69 @@ void print_TCP_packet_payload(struct sk_buff *skb, unsigned int data_offset){
 	payload = (char *) (skb->data + (ip_header->ihl * 4) + (tcp_header->doff * 4));
 	tot_len = ntohs(ip_header->tot_len);
 	L = tot_len - (ip_header->ihl * 4) - (tcp_header->doff * 4);
-	//printk("\n\n PAYLOAD LEN: %d ", L);
-	printk("\n PAYLOAD:\n");
+	//dmesg("PAYLOAD LEN: %d ", L);
+	dmesg("PAYLOAD:");
+	for(i=0; i<L; i++){
+		dmesg("%c", *(payload + i));
+	}
+	skb_push(skb, data_offset);
+}
+
+void print_UDP_packet_payload(struct sk_buff *skb, unsigned int data_offset){
+	int i, L, tot_len;
+	struct iphdr *ip_header;
+	struct udphdr *udp_header;
+	char *payload;
+
+	skb_pull(skb, data_offset);
+	ip_header = get_IP_header(skb);
+	udp_header = get_UDP_header(skb);
+
+	payload = (char *) (skb->data + (ip_header->ihl * 4) + UDP_HEADROOM);
+
+
+	tot_len = ntohs(ip_header->tot_len);
+	L = tot_len - (ip_header->ihl * 4) - UDP_HEADROOM;
+
+	//dmesg(" PAYLOAD LEN: %d ", L);
+	dmesg(" --- PAYLOAD:");
 	for(i=0; i<L; i++){
 		printk("%c", *(payload + i));
 	}
 	skb_push(skb, data_offset);
+}
+
+char * get_UDP_packet_payload(struct sk_buff *skb, unsigned int data_offset){
+	int L, tot_len;
+	struct iphdr *ip_header;
+	struct udphdr *udp_header;
+	char *payload;
+	//char *result;
+
+	skb_pull(skb, data_offset);
+	ip_header = get_IP_header(skb);
+	udp_header = get_UDP_header(skb);
+
+	payload = (char *) (skb->data + (ip_header->ihl * 4) + UDP_HEADROOM);
+
+	tot_len = ntohs(ip_header->tot_len);
+	L = tot_len - (ip_header->ihl * 4) - UDP_HEADROOM;
+
+	/*result = (char *) kzalloc(sizeof(char)*L, GFP_ATOMIC);
+	if(result == NULL){
+		dmesge("get_UDP_packet_payload - Unable to allocating result");
+		return NULL;
+	}
+	memcpy(result, payload, L);*/
+
+	/*dmesg(" --- PAYLOAD:");
+	for(i=0; i<L; i++){
+		dmesg("%c", *(payload + i));
+	}*/
+
+	skb_push(skb, data_offset);
+	//return result;
+	return payload;
 }
 
 __sum16 compute_UDP_checksum(struct sk_buff *skb){
@@ -419,27 +545,27 @@ u32 get_dev_ip_address(struct net_device *dev, char *iname, int index){
 	struct in_device *pin_dev;
 	int put = 0;
 
+	addr = 0;
 	device = dev;
 	if(device == NULL){
-		if(iname != NULL) device = dev_get_by_name(&init_net, iname);
-		else device = dev_get_by_index(&init_net, index);
+		if(iname != NULL) device = dev_get_by_name(upmtns->net_ns, iname);
+		else device = dev_get_by_index(upmtns->net_ns, index);
 		
 		if(device == NULL) {
-			addr = 0;
+			dmesge("get_dev_ip_address - device ---> NULL");
 			goto end;
 		}
-		else
-			put = 1;
+		else put = 1;
 	}
 	pin_dev = (struct in_device *) device->ip_ptr;
 
 	if(pin_dev == NULL){
-		printk("\n\t get_dev_ip_address - error - pin_dev ---> NULL");
+		dmesge("get_dev_ip_address - pin_dev ---> NULL");
 		addr = 0;
 		goto end;
 	}
 	if(pin_dev->ifa_list == NULL){
-		printk("\n\t get_dev_ip_address - error - pin_dev->ifa_list ---> NULL");
+		dmesge("get_dev_ip_address - pin_dev->ifa_list ---> NULL");
 		addr = 0;
 		goto end;
 	}
@@ -459,42 +585,65 @@ struct net_device* search_dev_by_ip(u32 ip_f){
 	struct in_ifaddr *adlist;
 
 	if(mdl == NULL){
-			printk("\n\t search_dev_by_ip - error - mdl ---> NULL");
-			return NULL;
+		dmesge("search_dev_by_ip - mdl ---> NULL");
+		return NULL;
 	}
 	list_for_each_entry(tmp, &mdl->list, list) {
 		 
-		dev_s = dev_get_by_name(&init_net, tmp->md.iname);
+		dev_s = dev_get_by_name(upmtns->net_ns, tmp->md.iname);
 		if(dev_s == NULL){
-			printk("\n\t search_dev_by_ip - error - dev_s ---> NULL");
+			dmesge("search_dev_by_ip - dev_s ---> NULL");
 			return NULL;
 	        }
 
 		pin_dev = (struct in_device *) dev_s->ip_ptr;
 		if(pin_dev == NULL){
-			printk("\n\t search_dev_by_ip - error - pin_dev ---> NULL");
+			dmesge("search_dev_by_ip - pin_dev ---> NULL");
 			return NULL;
 	        }
 		if(pin_dev->ifa_list == NULL){
-			printk("\n\t search_dev_by_ip - error - pin_dev->ifa_list struct sockaddr *addr; ---> NULL");
+			dmesge("search_dev_by_ip - pin_dev->ifa_list struct sockaddr *addr; ---> NULL");
 			return NULL;
 	        }
 
 		adlist = pin_dev->ifa_list;
 
 		while (adlist != NULL){
-			if(ip_f == adlist->ifa_address ) return dev_s;
-			adlist=adlist->ifa_next;
+			if(ip_f == adlist->ifa_address) return dev_s;
+			adlist = adlist->ifa_next;
 		}
 	}
 	return NULL;
 }
 
-void check_context(void){
-	printk("\n\t ---> in_irq():      \t%lu", in_irq());
-	printk("\n\t ---> in_softirq():  \t%lu", in_softirq());
-	printk("\n\t ---> in_interrupt():\t%lu", in_interrupt());
-	printk("\n\t ---> preemptible(): \t%d", preemptible());
+void check_context(char *message){
+	printk("/********************/\n");
+	printk("%s\n", message);
+	dmesg("in_irq():\t\t%lu",	in_irq());
+	dmesg("in_softirq():\t\t%lu",	in_softirq());
+	dmesg("in_interrupt():\t\t%lu",	in_interrupt());
+	dmesg("preemptible():\t\t%d",	preemptible());
+	printk("/********************/\n");
+}
+
+void dmesg( const char * format, ...) // Wrapping printk to add nodename and to allow debugging with multiple module istances (Sander) 
+{
+    va_list ap;
+    va_start(ap, format);
+    printk("[upmt_%s module] ", upmtns->uts_ns->name.nodename);
+    vprintk(format, ap);
+    printk("\n");
+    va_end(ap);
+}
+
+void dmesge( const char * format, ...) // Wrapping printk to add nodename and to allow debugging with multiple module istances (Sander)
+{
+    va_list ap;
+    va_start(ap, format);
+    printk("[upmt_%s module error] ", upmtns->uts_ns->name.nodename);
+    vprintk(format, ap);
+    printk("\n");
+    va_end(ap);
 }
 
 MODULE_LICENSE("GPL");

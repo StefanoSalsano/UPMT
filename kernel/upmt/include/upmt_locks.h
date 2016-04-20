@@ -19,8 +19,8 @@ void bul_read_lock_bh(void);
 void bul_read_unlock_bh(void);
 void bul_write_lock_bh(void);
 void bul_write_unlock_bh(void);
-void bul_write_lock_irqsave(unsigned long fl);
-void bul_write_unlock_irqrestore(unsigned long fl);
+void bul_write_lock_irqsave(unsigned long);
+void bul_write_unlock_irqrestore(unsigned long);
 
 extern spinlock_t tunt_lock;
 extern spinlock_t paft_lock;

@@ -16,7 +16,7 @@ default:
 	$(MAKE) -C upmtconf/
 	$(MAKE) -C upmt-appmon/
 	$(MAKE) -C java/upmt/src/
-
+	sh compileRME
 install:
 	$(MAKE) -C kernel/ install
 	$(MAKE) -C upmtconf/ install

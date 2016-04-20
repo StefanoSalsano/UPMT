@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <sys/utsname.h>
 #include <poll.h>
 #include <netdb.h>
 #include <sys/un.h>
@@ -52,7 +53,6 @@ struct 	nlattr *nl_attr[UPMT_APPMON_A_MAX+1];
 
 int create_nl_socket() {
 	int fd;
-	struct sockaddr_nl local;
 
 	fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
 	if (fd < 0) {
@@ -223,15 +223,123 @@ void newconn_handler(struct nlattr *na) {
 	cJSON_AddNumberToObject(key, UPMT_CONN_NOTIF_JSON_KEY_DPORT, nd->key.dport);
 	cJSON_AddNumberToObject(key, UPMT_CONN_NOTIF_JSON_KEY_SPORT, nd->key.sport);
 	
-	cJSON_AddStringToObject(root, UPMT_CONN_NOTIF_JSON_APPNAME, nd->appname);
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_APPNAME, nd->appname);
 	
-	cJSON_AddNumberToObject(root, UPMT_CONN_NOTIF_JSON_TID, nd->tid);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_TID, nd->tid);
 	
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_COMMAND, UPMT_APP_JSON_NEWCONN_COMMAND);
+
 	char *jsonmsg = cJSON_PrintUnformatted(root);
 	printf("msg json: [%s]\n", jsonmsg);
 	
 	if (sendto(tomgr_sd, jsonmsg, strlen(jsonmsg), 0, (struct sockaddr *) &tomgr_addr, sizeof(tomgr_addr)) < 0)
 		perror("newconn_handler: sendto");
+}
+
+//delete connections handler (bonus)
+void deleteconn_handler(struct nlattr *na){
+	void *payload = GENLMSG_NLA_DATA(na);
+        struct upmt_del_conn_data *nd = (struct upmt_del_conn_data*) payload;
+
+	cJSON *root, *key;
+        root = cJSON_CreateObject();
+        key = cJSON_CreateObject();
+        cJSON_AddItemToObject(root, UPMT_CONN_NOTIF_JSON_KEY, key);
+
+#ifndef ANDROID
+        struct protoent *proto = getprotobynumber(nd->key.proto);
+	cJSON_AddStringToObject(key, UPMT_CONN_NOTIF_JSON_KEY_PROTO, proto->p_name);
+#else
+        char* proto;
+        if (nd->key.proto == 1)
+                proto = "icmp";
+        else if (nd->key.proto == 6)
+                proto = "tcp";
+        else if (nd->key.proto == 17)
+                proto = "udp";
+        else
+                proto = "other";
+        cJSON_AddStringToObject(key, UPMT_CONN_NOTIF_JSON_KEY_PROTO, proto);
+#endif
+	char ipbuf[INET_ADDRSTRLEN];
+        struct in_addr ip;
+
+        ip.s_addr = nd->key.daddr;
+        inet_ntop(AF_INET, &ip, ipbuf, INET_ADDRSTRLEN);
+	cJSON_AddStringToObject(key, UPMT_CONN_NOTIF_JSON_KEY_DADDR, ipbuf);
+	
+	ip.s_addr = nd->key.saddr;
+	inet_ntop(AF_INET, &ip, ipbuf, INET_ADDRSTRLEN);
+	cJSON_AddStringToObject(key, UPMT_CONN_NOTIF_JSON_KEY_SADDR, ipbuf);
+
+	cJSON_AddNumberToObject(key, UPMT_CONN_NOTIF_JSON_KEY_DPORT, nd->key.dport);
+	cJSON_AddNumberToObject(key, UPMT_CONN_NOTIF_JSON_KEY_SPORT, nd->key.sport);
+
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_COMMAND, UPMT_APP_JSON_DELCONN_COMMAND);
+
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_TID, nd->tid);
+
+        char *jsonmsg = cJSON_PrintUnformatted(root);
+        printf("[deleteconn_handler]\tmsg json: [%s]\n", jsonmsg);
+
+	if (sendto(tomgr_sd, jsonmsg, strlen(jsonmsg), 0, (struct sockaddr *) &tomgr_addr, sizeof(tomgr_addr)) < 0)
+                perror("deleteconn_handler: sendto");
+}
+
+//delete connections handler (bonus)
+void deletetun_handler(struct nlattr *na){
+	char ipbuf[INET_ADDRSTRLEN];
+	struct in_addr ip;
+
+	void *payload = GENLMSG_NLA_DATA(na);
+	struct upmt_del_tun_data *nd = (struct upmt_del_tun_data*) payload;
+
+	cJSON *root;
+	root = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_COMMAND, UPMT_APP_JSON_DELTUN_COMMAND);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_TID, nd->tid);
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_IFNAME, nd->ifname);
+
+	ip.s_addr = nd->daddr;
+	inet_ntop(AF_INET, &ip, ipbuf, INET_ADDRSTRLEN);
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_DADDR, ipbuf);
+
+	char *jsonmsg = cJSON_PrintUnformatted(root);
+	printf("[deletetun_handler]\tmsg json: [%s]\n", jsonmsg);
+
+	if (sendto(tomgr_sd, jsonmsg, strlen(jsonmsg), 0, (struct sockaddr *) &tomgr_addr, sizeof(tomgr_addr)) < 0)
+		perror("deletetun_handler: sendto");
+}
+
+void infotun_handler(struct nlattr *na){
+	char ipbuf[INET_ADDRSTRLEN];
+	struct in_addr ip;
+
+	void *payload = GENLMSG_NLA_DATA(na);
+	struct upmt_info_tun_data *nd = (struct upmt_info_tun_data*) payload;
+
+	cJSON *root;
+	root = cJSON_CreateObject();
+
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_COMMAND, UPMT_APP_JSON_INFOTUN_COMMAND);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_TID, nd->tid);
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_IFNAME, nd->ifname);
+
+	ip.s_addr = nd->daddr;
+	inet_ntop(AF_INET, &ip, ipbuf, INET_ADDRSTRLEN);
+	cJSON_AddStringToObject(root, UPMT_APP_MSG_JSON_DADDR, ipbuf);
+
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_DELAY, nd->rtt);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_LOSS, nd->loss);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_EWMADELAY, nd->ewmartt);
+	cJSON_AddNumberToObject(root, UPMT_APP_MSG_JSON_EWMALOSS, nd->ewmaloss);
+
+	char *jsonmsg = cJSON_PrintUnformatted(root);
+	printf("[infotun_handler]\tmsg json: [%s]\n", jsonmsg);
+
+	if (sendto(tomgr_sd, jsonmsg, strlen(jsonmsg), 0, (struct sockaddr *) &tomgr_addr, sizeof(tomgr_addr)) < 0)
+		perror("infotun_handler: sendto");
 }
 
 void receive_and_dispatch_netlink_msg() {
@@ -242,6 +350,16 @@ void receive_and_dispatch_netlink_msg() {
 
 	if (ans.g.cmd == UPMT_APPMON_C_NEW_CONN) {
 		newconn_handler(nl_attr[UPMT_APPMON_A_NEW_CONN]);
+	}
+	//(bonus)
+	if(ans.g.cmd == UPMT_APPMON_C_DEL_CONN) {
+		deleteconn_handler(nl_attr[UPMT_APPMON_A_DEL_CONN]);
+	}
+	if(ans.g.cmd == UPMT_APPMON_C_DEL_TUN) {
+		deletetun_handler(nl_attr[UPMT_APPMON_A_DEL_TUN]);
+	}
+	if(ans.g.cmd == UPMT_APPMON_C_INFO_TUN) {
+		infotun_handler(nl_attr[UPMT_APPMON_A_INFO_TUN]);
 	}
 }
 
@@ -278,6 +396,15 @@ void receive_and_dispatch_appmgr_msg() {
 			
 			switch (msg.command) {
 				case CMD_ADD:
+					/**/ //Fabio Patriarca adds this lines
+					elem = cJSON_GetObjectItem(parsedmsg, UPMT_APP_MSG_JSON_VIPA);
+					if (elem == NULL) goto malformed;
+					struct in_addr vipa;
+					inet_pton(AF_INET, elem->valuestring, &vipa);
+					//printf("VIPA: %s --> %d\n", elem->valuestring, vipa.s_addr);
+					msg.vipa = vipa.s_addr;
+					/**/
+
 					elem = cJSON_GetObjectItem(parsedmsg, UPMT_APP_MSG_JSON_APPNAME);
 					if (elem == NULL) goto malformed;
 					strncpy(msg.appname, elem->valuestring, MAX_APPNAME_LENGTH);
@@ -382,6 +509,19 @@ int init_family_id() {
 	struct genl_msg family_req, ans;
 	int id = -10;
 	struct nlattr *na;
+	struct utsname utstemp;
+	uname(&utstemp);
+
+	// the netlink family name is now concatenated with the hostname of the namespace from where upmtconf is executed (Sander)
+	char family_name[100];
+	strcpy(family_name, UPMT_GNL_FAMILY_NAME);
+	strcat(family_name, utstemp.nodename);
+
+	// the family can't be too long (why 13? should be 16) (Sander)
+	if (strlen(family_name)>13){
+		printf("hostname too long");
+		return -1;
+	}
 
 	family_req.n.nlmsg_type = GENL_ID_CTRL;
 	family_req.n.nlmsg_flags = NLM_F_REQUEST;
@@ -391,8 +531,10 @@ int init_family_id() {
 	family_req.g.cmd = CTRL_CMD_GETFAMILY;
 	family_req.g.version = 0x1;
 
+	printf("Appmon - trying to find family_name : %s\n",family_name);
+
 	na = (struct nlattr *) GENLMSG_DATA(&family_req);
-	set_nl_attr(na, CTRL_ATTR_FAMILY_NAME, UPMT_GNL_FAMILY_NAME, strlen(UPMT_GNL_FAMILY_NAME));
+	set_nl_attr(na, CTRL_ATTR_FAMILY_NAME, family_name, strlen(family_name)); // Using family_name instead of UPMT_GNL_FAMILY_NAME (Sander)
 	family_req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
 
 	if (sendto_fd(nl_sd, (char *) &family_req, family_req.n.nlmsg_len) < 0)
@@ -406,6 +548,7 @@ int init_family_id() {
 	if (na->nla_type == CTRL_ATTR_FAMILY_ID) {
 		id = *(__u16 *) GENLMSG_NLA_DATA(na);
 		upmt_family_id = id;
+		printf("Appmon - family id found for family_name : %s\n",family_name);
 		return 0;
 	}
 	return -1;	
@@ -500,14 +643,19 @@ int main(int argc, char *argv[]) {
 	fds[0].events = POLLIN;
 	fds[1].fd = frommgr_sd;
 	fds[1].events = POLLIN;
-	
+
+	fflush(stdout);
+
 	while (poll(fds, SOCKETS_TO_POLL, -1) > 0) {
+		
 		if (fds[0].revents & POLLIN) {			//received netlink message
 			receive_and_dispatch_netlink_msg();
 		}
 		else if (fds[1].revents & POLLIN) {		//received appmgr message
 			receive_and_dispatch_appmgr_msg();		
 		}
+
+		
 	}
 
 	return 0;

@@ -1,0 +1,28 @@
+diff -rupN linux-source-3.8.0/include/linux/skbuff.h linux-source-3.8.0-upmt/include/linux/skbuff.h
+--- linux-source-3.8.0/include/linux/skbuff.h	2013-06-06 22:47:11.000000000 +0200
++++ linux-source-3.8.0-upmt/include/linux/skbuff.h	2013-06-18 23:23:50.574783000 +0200
+@@ -407,6 +407,8 @@ struct sk_buff {
+ 	 */
+ 	char			cb[48] __aligned(8);
+ 
++	__u32			tgid; /* UPMT */
++
+ 	unsigned long		_skb_refdst;
+ #ifdef CONFIG_XFRM
+ 	struct	sec_path	*sp;
+diff -rupN linux-source-3.8.0/net/core/skbuff.c linux-source-3.8.0-upmt/net/core/skbuff.c
+--- linux-source-3.8.0/net/core/skbuff.c	2013-02-19 00:58:34.000000000 +0100
++++ linux-source-3.8.0-upmt/net/core/skbuff.c	2013-06-18 23:19:54.296695000 +0200
+@@ -267,8 +267,12 @@ struct sk_buff *__alloc_skb(unsigned int
+ 	atomic_set(&shinfo->dataref, 1);
+ 	kmemcheck_annotate_variable(shinfo->destructor_arg);
+ 
++	if(in_interrupt() == 0) /* UPMT */
++		skb->tgid=current->tgid; /* UPMT */
++
+ 	if (flags & SKB_ALLOC_FCLONE) {
+ 		struct sk_buff *child = skb + 1;
++		child->tgid=skb->tgid; /* UPMT */
+ 		atomic_t *fclone_ref = (atomic_t *) (child + 1);
+ 
+ 		kmemcheck_annotate_bitfield(child, flags1);

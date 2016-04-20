@@ -25,9 +25,6 @@ public class TrafficCollector extends ADataCollector {
 
 	@Override
 	public ITracePoint2D collectData() {
-		// ifconfig eth0 | grep bytes
-		// RX bytes:75174 (73.4 KB) TX bytes:21982 (21.4 KB)
-
 		String bytes = Shell.executeCommand( new String[] { "sh", "-c", "ifconfig " + iface + " | grep bytes" }).trim();
 		int rxBegin = bytes.indexOf(":") + 1;
 		int rxEnd = bytes.indexOf(" ", rxBegin);

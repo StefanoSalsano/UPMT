@@ -2,6 +2,16 @@ To compile, just type 'make'.
 
 	/*******************/
 
+	NetLink family:
+		-G
+			family number
+		
+		./upmtconf -G 2 -a tun -i eth0 -d 10.0.0.2 -l 1000 -r 2000
+		./upmtconf -G 5 -a tun -i eth0 -d 10.0.0.2 -l 1000 -r 2000
+		./upmtconf -G 3 -x tun -n 4
+
+	/*******************/
+
 	Adding/removing a tunnel:
 		-i
 			local interface
@@ -28,6 +38,13 @@ To compile, just type 'make'.
 		
 		./upmtconf -a tun -i eth0 -d 10.0.0.2 -l 1000 -r 2000 -S off -D off -n default
 		./upmtconf -x tun -n default
+	/*******************/
+
+	Getting a tunnel:
+		-n
+			tunnel id
+		
+		./upmtconf -g tun -n 1
 		
 	/*******************/
 
@@ -50,7 +67,15 @@ To compile, just type 'make'.
 
 		./upmtconf -a rule -p udp -s 1.0.0.1 -d 1.0.0.2 -l 10000 -r 20000 -n 1
 		./upmtconf -x rule -n 1
+	/*******************/
 
+	Getting a rule:
+		-d
+			remote ip address
+		-r
+			remote port
+
+		./upmtconf -g rule -d 1.0.0.2 -r 10000
 	/*******************/
 
 	Adding/removing a tsa:
@@ -140,6 +165,11 @@ To compile, just type 'make'.
 			
 		./upmtconf -V 2
 		./upmtconf -V off
+
+		LEVEL 1 - print on dmesg all packets entering the UPMT module
+		LEVEL 2 - print on dmesg all packets encap/decap results
+		LEVEL 3 - print on dmesg all packets VPN encap results
+		LEVEL 4 - print on dmesg all packets iNAT de_iNAT results
 		
 	/*******************/
 	
@@ -154,4 +184,17 @@ To compile, just type 'make'.
 		./upmtconf -f all
 		
 	/*******************/
+	
+	Keep-Alive:
+		-k
+			keep-alive state (on/off) or period (milliseconds)
+		-n
+			tunnel id
+		-T
+			tunnel timeout
+		
+		./upmtconf -k 1000 -T 5000 
+		./upmtconf -k on  -n 1
+		./upmtconf -k off -n 1
 
+		

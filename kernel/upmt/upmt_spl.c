@@ -6,6 +6,7 @@
  */
 
 #include "include/upmt_spl.h"
+#include "include/upmt_util.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -34,14 +35,14 @@ int reserve_port(u16 port /*, struct socket *sock*/){
 
 	tmp = (struct spl_entry *) kzalloc(sizeof(struct spl_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("reserve_port - Error - Unable to allocating memory for new_entry");
+		dmesge("reserve_port - Unable to allocating memory for new_entry");
 		return -2;
 	}
 	tmp->n = 1;
 	tmp->port = port;
 
 	if(sock_create(AF_INET, SOCK_DGRAM, IPPROTO_UDP, &tmp->sock) < 0){
-		printk("reserve_port - Error - Unable to create socket");
+		dmesge("reserve_port - Unable to create socket");
 		kfree(tmp);
 		return -2;
 	}
@@ -50,10 +51,10 @@ int reserve_port(u16 port /*, struct socket *sock*/){
 	memset(&addr, 0, sizeof(struct sockaddr));
 	addr.sin_family      		= AF_INET;
 	addr.sin_addr.s_addr      	= htonl(INADDR_ANY);
-	addr.sin_port				= htons(port);
+	addr.sin_port			= htons(port);
 
 	if(tmp->sock->ops->bind(tmp->sock, (struct sockaddr *)&addr, sizeof(struct sockaddr)) < 0){
-		printk("reserve_port - Error - Unable to bind port %u", port);
+		dmesg("UPMT - reserve_port - Unable to bind port %u", port);
 		kfree(tmp);
 		return -1; //TODO check the errno variable to understand the origin of the error
 	}
@@ -69,7 +70,7 @@ struct socket * release_port(u16 port){
 	tmp = search_port(port);
 	if(tmp != NULL){
 		tmp->n--;
-		if(tmp->n < 0) printk("\n !-WARNING-! - release_port - n with negative value");
+		if(tmp->n < 0) dmesge("release_port - !-WARNING-! - tmp->n with negative value");
 		if(tmp->n <= 0){
 			//sock_release(tmp->sock);
 			list_del(&tmp->list);
@@ -94,7 +95,7 @@ struct socket * release_port(u16 port){
 int spl_create(void){
 	spl = (struct spl_entry *) kzalloc(sizeof(struct spl_entry), GFP_ATOMIC);
 	if(spl == NULL){
-		printk("spl_create - Error - Unable to allocating memory for spl");
+		dmesge("spl_create - Unable to allocating memory for spl");
 		return -1;
 	}
 	INIT_LIST_HEAD(&spl->list);

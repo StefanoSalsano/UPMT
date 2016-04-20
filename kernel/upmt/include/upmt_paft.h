@@ -32,7 +32,8 @@ struct paft_entry * paft_insert(const struct upmt_key *, struct tunt_entry *, ch
 int paft_insert_by_tid(const struct upmt_key *, int, char);
 
 struct tunt_entry *	paft_get_tun(const struct upmt_key *);
-struct paft_entry * paft_search(const struct upmt_key *);
+struct paft_entry * 	paft_search(const struct upmt_key *);
+struct paft_entry * 	paft_search_by_remote_key(const struct upmt_key *);
 struct paft_entry *	paft_search_by_rid(const int);
 
 int paft_delete(const struct upmt_key *);

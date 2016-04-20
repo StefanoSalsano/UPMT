@@ -7,9 +7,7 @@
 
 #include "include/upmt_paft.h"
 #include "include/upmt_util.h"
-#include "include/upmt_locks.h"
 #include "include/upmt_tunt.h"
-#include "include/upmt_locks.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -60,7 +58,7 @@ static struct paft_entry * paft_insert_entry(const struct paft_entry *e){
 	if(paft->table[hash] == NULL){
 		paft->table[hash] = (struct paft_entry *) kzalloc(sizeof(struct paft_entry), GFP_ATOMIC);
 		if(paft->table[hash] == NULL){
-			printk("paft_insert - Error - Unable to allocate memory for first new_entry");
+			dmesge("paft_insert - Unable to allocate memory for first new_entry");
 			return NULL;
 		}
 		INIT_LIST_HEAD(&paft->table[hash]->list);
@@ -80,7 +78,7 @@ static struct paft_entry * paft_insert_entry(const struct paft_entry *e){
 	// otherwise add it
 	tmp = (struct paft_entry *) kzalloc(sizeof(struct paft_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("paft_insert - Error - Unable to allocate memory for new_entry");
+		dmesge("paft_insert - Unable to allocate memory for new_entry");
 		return NULL;
 	}
 	paft_entry_copy(tmp, e);
@@ -109,6 +107,21 @@ struct paft_entry * paft_search(const struct upmt_key *k){
 
 	list_for_each_entry(tmp, &paft->table[hash]->list, list){
 		if(umpt_key_equals(k, &tmp->key) == 0) return tmp;
+	}
+	return NULL;
+}
+
+struct paft_entry * paft_search_by_remote_key(const struct upmt_key *k){
+	struct paft_entry *tmp = NULL;
+	struct list_head *pos, *q;
+	u32 i;
+
+	for(i=0; i<paft->dim; i++){
+		if(paft->table[i] == NULL) continue;
+		list_for_each_safe(pos, q, &paft->table[i]->list){
+			tmp = list_entry(pos, struct paft_entry, list);
+			if((tmp->key.daddr == k->daddr)&&(tmp->key.dport == k->dport)) return tmp;
+		}
 	}
 	return NULL;
 }
@@ -149,7 +162,7 @@ int paft_delete(const struct upmt_key *k){
 	}
 	return -1;
 }
-EXPORT_SYMBOL(paft_delete);
+//EXPORT_SYMBOL(paft_delete);
 
 int paft_delete_by_rid(const int rid){
 	struct paft_entry *tmp;
@@ -222,7 +235,7 @@ int paft_create(){
 	
 	paft = (struct paft_table *) kzalloc(sizeof(struct paft_table), GFP_KERNEL);
 	if(paft == NULL){
-		printk("Error - Unable to allocate memory for paft table");
+		dmesge("paft_create - Unable to allocate memory for paft table");
 		return -1;
 	}
 
@@ -232,7 +245,7 @@ int paft_create(){
 	//paft->table = (struct paft_entry **)kzalloc(sizeof(struct paft_entry *) * paft->dim, GFP_KERNEL);
 	paft->table = (struct paft_entry **) vzalloc(sizeof(struct paft_entry *) * paft->dim);
 	if(paft->table == NULL){
-		printk("Error - Unable to allocate memory for rt_table");
+		dmesge("paft_create - Unable to allocate memory for rt_table");
 		return -1;
 	}
 
@@ -246,7 +259,7 @@ int paft_create(){
 	//paft->rid_trace = (int *) kzalloc(sizeof(int) * (paft->dim+1), GFP_KERNEL);
 	paft->rid_trace = (int *) vzalloc(sizeof(int) * (paft->dim+1));
 	if(paft->rid_trace == NULL){
-		printk("Error - Unable to allocate memory for rid_trace");
+		dmesge("paft_create - Unable to allocate memory for rid_trace");
 		return -1;
 	}
 	memset(paft->rid_trace, 0, paft->dim+1);
@@ -297,10 +310,8 @@ int paft_insert_by_tid(const struct upmt_key *key, int tid, char staticrule) {
 	
 	if((key->proto != IPPROTO_TCP)&&(key->proto != IPPROTO_UDP)) {
 		res = -1; // Transport protocol is wrong or not specified
-		goto end;
+		return res;
 	}
-
-	bul_write_lock();
 
 	te = tunt_search_by_tid(tid);
 	if(te == NULL) {
@@ -314,9 +325,8 @@ int paft_insert_by_tid(const struct upmt_key *key, int tid, char staticrule) {
 	}
 
 end:
-	bul_write_unlock();
 	return res;
 }
-EXPORT_SYMBOL(paft_insert_by_tid);
+//EXPORT_SYMBOL(paft_insert_by_tid);
 
 MODULE_LICENSE("GPL");

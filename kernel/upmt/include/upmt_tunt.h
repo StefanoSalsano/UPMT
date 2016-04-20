@@ -14,6 +14,7 @@ extern struct tunt_entry *default_tunnel;
 
 struct tunt_entry {
 	struct tun_param tp;
+	struct keep_alive kp;
 	struct list_head list;
 };
 
@@ -34,6 +35,7 @@ int 			tunt_del_default(void);
 struct tunt_entry * tunt_insert(struct tun_param *, int);
 struct tunt_entry *	tunt_search(const struct tun_param *);
 struct tunt_entry * tunt_search_by_tid(const int);
+struct tunt_entry * tunt_set_ka_by_tid(const int, const int);
 
 int 	tunt_delete(const struct tun_param *);
 void 	tunt_delete_by_tsa(const struct tun_local *);

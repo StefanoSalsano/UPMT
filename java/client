@@ -1,9 +1,0 @@
-# /bin/bash/
-
-insmod ../kernel/upmt/upmt.ko
-ifconfig upmt0 5.6.7.8
-cp ./rt_tables /etc/iproute2/
-iptables -t mangle -A OUTPUT -p udp --source-port 5060 -j MARK --set-mark 0xfafafafa
-iptables -t mangle -A OUTPUT -p udp --destination-port 5353 -j MARK --set-mark 0xfafafafa
-iptables -t mangle -A OUTPUT -p udp --destination-port 53 -j MARK --set-mark 0xfafafafa
-iptables -t mangle -A OUTPUT -p tcp -j MARK --set-mark 0xfafafafa

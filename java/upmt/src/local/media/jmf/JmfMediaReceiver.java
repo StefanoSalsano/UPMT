@@ -2,14 +2,22 @@ package local.media.jmf;
 
 
 
-import javax.media.*;
-import javax.media.format.*;
-import java.util.Vector;
+import java.awt.BorderLayout;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.Frame;
+import java.awt.Image;
+import java.awt.Panel;
+import java.awt.Toolkit;
+import java.awt.event.WindowEvent;
 
-import java.awt.*;
-import java.awt.event.*;
-import javax.swing.*;
-import javax.swing.border.Border;
+import javax.media.ControllerEvent;
+import javax.media.ControllerListener;
+import javax.media.Manager;
+import javax.media.MediaLocator;
+import javax.media.Player;
+import javax.media.RealizeCompleteEvent;
+import javax.media.format.FormatChangeEvent;
 
 
 
@@ -112,6 +120,7 @@ public class JmfMediaReceiver implements ControllerListener
 
 
    /** Updates the receiver controller. */
+   @Override
    public synchronized void controllerUpdate(ControllerEvent event)
    {  if (gui!=null) gui.controllerUpdate(event);
    }

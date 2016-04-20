@@ -105,7 +105,7 @@ public class TransactionClient extends Transaction
 	 * It's fired from the SipProvider when a new message is received for to the present TransactionClient. */
 	public void onReceivedMessage(SipProvider provider, Message msg)
 	{
-		System.out.println("Received message:\r\n"+msg.toString());
+		//System.out.println("Received message:\r\n"+msg.toString());
 		if (msg.isResponse())
 		{  int code=msg.getStatusLine().getCode();
 		if (code>=100 && code<200 && (statusIs(STATE_TRYING) || statusIs(STATE_PROCEEDING)))
@@ -152,7 +152,6 @@ public class TransactionClient extends Transaction
 	//Ad ogni ritrasmissione cambio il timestamp.
 	if(request.getTimestampHeader() != null)
 		request.setTimestampHeader(String.valueOf(System.currentTimeMillis()));
-	System.err.println("RETRAYYYY");
 	sip_provider.sendMessage(request);
 	long timeout=2*retransmission_to.getTime();
 	if (timeout>SipStack.max_retransmission_timeout || statusIs(STATE_PROCEEDING)) timeout=SipStack.max_retransmission_timeout;

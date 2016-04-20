@@ -27,7 +27,7 @@ struct tsa_entry * tsa_insert(struct tun_local *tl){
 
 	tmp = (struct tsa_entry *) kzalloc(sizeof(struct tsa_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("tsa_insert - Error - Unable to allocating memory for new_entry");
+		dmesge("tsa_insert - Unable to allocating memory for new_entry");
 		return NULL;
 	}
 
@@ -106,7 +106,7 @@ void tsa_fill_pointers(struct tun_local **data){
 int tsa_create(void){
 	tsa = (struct tsa_entry *) kzalloc(sizeof(struct tsa_entry), GFP_ATOMIC);
 	if(tsa == NULL){
-		printk("upmt: couldn't allocate memory for tsa");
+		dmesge("tsa_create - unable to allocate memory");
 		return -1;
 	}
 	INIT_LIST_HEAD(&tsa->list);

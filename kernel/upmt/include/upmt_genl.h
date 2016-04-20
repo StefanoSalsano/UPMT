@@ -16,6 +16,7 @@ struct RESP_MSG_DATA{
 	int len;
 };
 
+//int upmt_genl_register(int);
 int upmt_genl_register(void);
 int upmt_genl_unregister(void);
 

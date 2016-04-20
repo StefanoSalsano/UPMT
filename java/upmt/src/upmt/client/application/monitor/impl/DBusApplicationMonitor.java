@@ -1,16 +1,19 @@
 package upmt.client.application.monitor.impl;
 
 import java.util.Hashtable;
+import java.util.Iterator;
 import java.util.Vector;
 
 import org.freedesktop.dbus.DBusConnection;
 import org.freedesktop.dbus.DBusSigHandler;
 import org.freedesktop.dbus.exceptions.DBusException;
 
+import upmt.client.UPMTClient;
 import upmt.client.application.monitor.ApplicationMonitor;
 import upmt.client.application.monitor.ApplicationMonitorListener;
 import upmt.client.application.monitor.impl.dbus.AppMonitorProxy;
 import upmt.client.core.Socket;
+import upmt.client.sip.SipSignalManager;
 
 /** Network monitor for Linux. Require DBus. */
 public class DBusApplicationMonitor implements DBusSigHandler<AppMonitorProxy.Signal>, ApplicationMonitor
@@ -75,9 +78,28 @@ public class DBusApplicationMonitor implements DBusSigHandler<AppMonitorProxy.Si
 			AppMonitorProxy.SocketOpened signal = (AppMonitorProxy.SocketOpened)sig;
 
 			if(socketForApp.containsKey(signal.appName)) {
+				
+				Iterator<Socket> iterSocket = socketForApp.get(signal.appName).iterator();
+				boolean found = false;
+				while(iterSocket.hasNext() && !found) {
+					Socket socketCheck = iterSocket.next();
+//					if((socketCheck.getProto()).equals(signal.socket.getProto()) &&
+//							(socketCheck.getVipa()).equals(signal.socket.getVipa()) &&
+//							(socketCheck.getDstIp()).equals(signal.socket.getDstIp()) && 
+//							(socketCheck.getDstPort())==(signal.socket.getDstPort()) && 
+//							(socketCheck.getSrcPort())==(signal.socket.getSrcPort())) {
+//						found = true;
+//					}
+					if(socketCheck.id().equals(signal.socket.id())) {
+						found = true;
+					}
+				}
+				
 				// the application already had some open socket
-				socketForApp.get(signal.appName).add(signal.socket);
-				listener.socketOpened(signal.appName, signal.socket);
+				if(!found) {
+					socketForApp.get(signal.appName).add(signal.socket);
+					listener.socketOpened(signal.appName, signal.socket);
+				}
 			} else {
 				// the application did not have any open sockets controlled by UPMT
 				Vector<Socket> socketList = new Vector<Socket>();
@@ -120,6 +142,15 @@ public class DBusApplicationMonitor implements DBusSigHandler<AppMonitorProxy.Si
 			}
 			catch (DBusException e) {e.printStackTrace();}
 	}
+	
+	public void rmeSetAppAndVIPA (String appName, String VIPA, int tunnelID)
+	{
+		if(connection!=null)
+			try {
+				connection.sendSignal(new AppMonitorProxy.RmeSetAppAnVipa(PROXY_PATH,appName,VIPA,tunnelID));
+			}
+			catch (DBusException e) {e.printStackTrace();}
+	}
 
 	public void rmApp(String appName)
 	{
@@ -148,5 +179,11 @@ public class DBusApplicationMonitor implements DBusSigHandler<AppMonitorProxy.Si
 	public void setAppFlow(String dstIp, int tunnelID) {}
 	public void rmAppFlow(String dstIp, int port) {}
 	public void flushAppFlowList() {}
+
+	@Override
+	public void setClient(UPMTClient upmtClient) {
+		// TODO Auto-generated method stub
+		
+	}
 
 }

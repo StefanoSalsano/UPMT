@@ -28,6 +28,7 @@ int 	umpt_key_equals(const struct upmt_key *, const struct upmt_key *);
 
 void 	set_tun_local(struct tun_local *, const int, const unsigned int);
 void 	set_tun_local_from_skb(struct tun_local *, const struct sk_buff *);
+
 void 	tun_local_copy(struct tun_local *, const struct tun_local *);
 int 	umpt_tun_local_equals(const struct tun_local *, const struct tun_local *);
 
@@ -39,7 +40,11 @@ void 	tun_param_copy(struct tun_param *, const struct tun_param *);
 int 	umpt_tun_param_equals(const struct tun_param *, const struct tun_param *);
 
 void 	print_packet_information(struct sk_buff *, unsigned int);
+void 	print_packet_information2(struct sk_buff *, unsigned int);
 void 	print_TCP_packet_payload(struct sk_buff *, unsigned int);
+void 	print_UDP_packet_payload(struct sk_buff *, unsigned int);
+char *	get_UDP_packet_payload(struct sk_buff *, unsigned int);
+int		get_UDP_packet_payload_len(struct sk_buff *, unsigned int);
 
 __sum16 compute_UDP_checksum(struct sk_buff *);
 __sum16 compute_TCP_checksum(struct sk_buff *);
@@ -54,6 +59,9 @@ u32 	get_dev_ip_address(struct net_device *, char *, int); //warning, this funct
 
 struct	net_device* search_dev_by_ip(u32 ip_f);//This function returns the device from its IP
 
-void check_context(void);
+void check_context(char *);
+void dmesg(const char *, ...);
+void dmesge(const char *, ...);
+void dmesg_lbl(char *, char *);
 
 #endif /* UPMT_UTIL_H_ */

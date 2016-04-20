@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <linux/netlink.h>
 #include <linux/genetlink.h>
+#include <sys/utsname.h>
 
 #include <errno.h>
 
@@ -36,6 +37,11 @@ struct 	genl_msg req, ans;
 struct 	nlattr *nl_attr[UPMT_A_MSG_MAX+1];
 int first_print = 0;
 
+void init_data(){
+	memset(&req, 0, sizeof(struct genl_msg));
+	memset(&ans, 0, sizeof(struct genl_msg));
+}
+
 void asd(int index){
 	printf("\n ---> Punto %d\n", index);
 	fflush(stdout);
@@ -44,9 +50,9 @@ void asd(int index){
 /**********************************************/
 
 static int create_nl_socket(const int groups){
-	socklen_t addr_len;
+	//socklen_t addr_len;
 	int fd;
-	struct sockaddr_nl local;
+	//struct sockaddr_nl local;
 
 	fd = socket(AF_NETLINK, SOCK_RAW, NETLINK_GENERIC);
 	if (fd < 0){
@@ -79,10 +85,10 @@ static int sendto_fd(int s, const char *buf, int bufLen){
 	struct sockaddr_nl nladdr;
 	int r;
 
-	memset(&nladdr, 0, sizeof(nladdr));
+	memset(&nladdr, 0, sizeof(struct sockaddr_nl));
 	nladdr.nl_family = AF_NETLINK;
 
-	while ((r = sendto(s, buf, bufLen, 0, (struct sockaddr *) &nladdr, sizeof(nladdr))) < bufLen){
+	while ((r = sendto(s, buf, bufLen, 0, (struct sockaddr *) &nladdr, sizeof(struct sockaddr_nl))) < bufLen){
 		if (r > 0) {
 			buf += r;
 			bufLen -= r;
@@ -93,25 +99,53 @@ static int sendto_fd(int s, const char *buf, int bufLen){
 
 static void set_nl_attr(struct nlattr *na, const unsigned int type, const void *data, const unsigned int len){
 	int length = len + 2;
+	length = len + 1;
+	//length = len;
 	na->nla_type = type;
 	na->nla_len = length + NLA_HDRLEN; //message length
+	//memset(GENLMSG_NLA_DATA(na), 0, length);
 	memcpy(GENLMSG_NLA_DATA(na), data, length);
 }
 
-static int get_family_id(){
+static int get_family_id(int fam){
 	struct nlattr *na;
 	int id;
+	struct utsname utstemp;
+
+	uname(&utstemp);
+
+	// the netlink family name is now concatenated with the hostname of the namespace from where upmtconf is executed (Sander)
+	char family_name[100];
+	memset(family_name, 0, 100);
+	strcpy(family_name, UPMT_GNL_FAMILY_NAME);
+	strcat(family_name, utstemp.nodename);
+
+	// the family can't be too long (why 13? should be 16) (Sander)
+	if (strlen(family_name)>13){
+		printf("hostname too long");
+		return -1;
+	}
+	if(fam >= 0){
+		char number[10];
+		memset(number, 0, 10);
+		sprintf(number, "%d", fam);
+		strcat(family_name, number);
+	}
+
+	//printf("\nFamily_name: %s\n", family_name);
+	//exit(0);
 
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
 	req.n.nlmsg_type	= GENL_ID_CTRL;
 	req.n.nlmsg_flags 	= NLM_F_REQUEST;
 	req.n.nlmsg_seq 	= 0;
 	req.n.nlmsg_pid 	= getpid();
-	req.g.cmd 			= CTRL_CMD_GETFAMILY;
+	req.g.cmd 		= CTRL_CMD_GETFAMILY;
 	req.g.version 		= 0x1;
 
 	na = (struct nlattr *) GENLMSG_DATA(&req);
-	set_nl_attr(na, CTRL_ATTR_FAMILY_NAME, UPMT_GNL_FAMILY_NAME, strlen(UPMT_GNL_FAMILY_NAME));
+	set_nl_attr(na, CTRL_ATTR_FAMILY_NAME, family_name, strlen(family_name));
+
 	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
@@ -376,9 +410,10 @@ static void print_vpn_rule(unsigned int *ip, int *tid){
 
 /**********************************************/
 
-int upmt_genl_client_init(){
+int upmt_genl_client_init(int fam){
 	create_nl_socket(0);
-	get_family_id();
+	get_family_id(fam);
+	return 0;
 }
 
 int send_echo_command(){
@@ -400,11 +435,13 @@ int send_echo_command(){
 	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
+
 
 int send_tunt_command(const int command, const char *iface, const struct tun_param *tp){
 	struct nlattr *na;
-	struct sockaddr_nl nladdr;
+	//struct sockaddr_nl nladdr;
 	char *message;
 
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -432,7 +469,6 @@ int send_tunt_command(const int command, const char *iface, const struct tun_par
 	/***************************/
 
 	if(tp != NULL){
-	//if(1){
 		na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
 		set_nl_attr(na, UPMT_A_TUN_PARAM, tp, sizeof(struct tun_param));
 		req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
@@ -441,11 +477,12 @@ int send_tunt_command(const int command, const char *iface, const struct tun_par
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_paft_command(const int command, const int tid, const int rid, const struct upmt_key *key, char staticrule){
 	struct nlattr *na;
-	struct sockaddr_nl nladdr;
+	//struct sockaddr_nl nladdr;
 	char *message;
 
 	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
@@ -495,6 +532,7 @@ int send_paft_command(const int command, const int tid, const int rid, const str
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_tsa_command(const int command, const struct tun_local *tl, char *iface){
@@ -535,6 +573,7 @@ int send_tsa_command(const int command, const struct tun_local *tl, char *iface)
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_handover_command(int rid, int tid){
@@ -569,6 +608,7 @@ int send_handover_command(int rid, int tid){
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_an_command(int mark){
@@ -599,6 +639,7 @@ int send_an_command(int mark){
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_verbose_command(int verbose){
@@ -629,7 +670,52 @@ int send_verbose_command(int verbose){
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
+
+int send_keepAlive_command(int state, int tid, unsigned int period, unsigned int timeout){
+	struct nlattr *na;
+	struct sockaddr_nl nladdr;
+	char *message;
+
+	req.n.nlmsg_len 	= NLMSG_LENGTH(GENL_HDRLEN);
+	req.n.nlmsg_type 	= upmt_fam_id;
+	req.n.nlmsg_flags 	= NLM_F_REQUEST;
+	req.n.nlmsg_seq 	= 60;
+	req.n.nlmsg_pid 	= getpid();
+	req.g.cmd 			= UPMT_C_SET_KEEP;
+
+	/***************************/
+	message = REQUEST_MSG;
+
+	na = (struct nlattr *) GENLMSG_DATA(&req);
+	set_nl_attr(na, UPMT_A_MSG_TYPE, message, strlen(message));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/***************************/
+
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, UPMT_A_TUN_TID, &tid, sizeof(tid));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, UPMT_A_KEEP_STATE, &state, sizeof(state));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, UPMT_A_KEEP_PERIOD, &period, sizeof(period));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	na = (struct nlattr *) GENLMSG_NLA_NEXT(na);
+	set_nl_attr(na, UPMT_A_KEEP_TIMEOUT, &timeout, sizeof(timeout));
+	req.n.nlmsg_len += NLMSG_ALIGN(na->nla_len);
+
+	/***************************/
+
+	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
+}
+
 
 int send_flush_command(char *table){
 	struct nlattr *na;
@@ -659,6 +745,7 @@ int send_flush_command(char *table){
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_mdl_command(const int command, char *iface){
@@ -691,6 +778,7 @@ int send_mdl_command(const int command, char *iface){
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int send_pdft_command(const int command, const unsigned int address, const int tid){
@@ -727,6 +815,7 @@ int send_pdft_command(const int command, const unsigned int address, const int t
 	/***************************/
 
 	if (sendto_fd(nl_sd, (char *) &req, req.n.nlmsg_len) < 0) return -1;
+	return 0;
 }
 
 int receive_response() {
@@ -759,7 +848,7 @@ int do_receive_response(){
 	//if(ans.g.cmd == CTRL_CMD_GETFAMILY) return 0;
 	if(ans.g.cmd == 1) return 0;
 
-	if ( (ans.g.cmd == UPMT_C_LST_TUNNEL) || (ans.g.cmd == UPMT_C_LST_RULE) || (ans.g.cmd == UPMT_C_LST_TSA) || (ans.g.cmd == UPMT_C_LST_PDFT)) {
+	if ( (ans.g.cmd == UPMT_C_LST_TUNNEL) || (ans.g.cmd == UPMT_C_GET_TUNNEL) || (ans.g.cmd == UPMT_C_LST_RULE) || (ans.g.cmd == UPMT_C_GET_RULE) || (ans.g.cmd == UPMT_C_LST_TSA) || (ans.g.cmd == UPMT_C_LST_PDFT)) {
 		if (first_print == 1) {
 			printf("\n ---> Response from kernel:");
 			first_print = 0;
@@ -801,6 +890,8 @@ int parse_lst_nl_attrs(){
 		if(na->nla_type == UPMT_A_PAFT_STATIC)	print_table_rule(NULL, NULL, NULL, *(char*) data);
 
 		if(na->nla_type == UPMT_A_TUN_TID){
+			if(ans.g.cmd == UPMT_C_GET_TUNNEL) 	print_table_rule(NULL, NULL, (int *)data, -1);
+			if(ans.g.cmd == UPMT_C_GET_RULE) 	print_table_rule(NULL, NULL, (int *)data, -1);
 			if(ans.g.cmd == UPMT_C_LST_RULE) 	print_table_rule(NULL, NULL, (int *)data, -1);
 			if(ans.g.cmd == UPMT_C_LST_PDFT) 	print_vpn_rule(NULL, (int *)data);
 		}
@@ -842,7 +933,8 @@ void printResponse(const unsigned int type){
 		printf("%s", separator);
 	}
 
-	if((type == UPMT_C_SET_TUNNEL)||(type == UPMT_C_GET_TUNNEL)){
+	//if((type == UPMT_C_SET_TUNNEL)||(type == UPMT_C_GET_TUNNEL)){
+	if(type == UPMT_C_SET_TUNNEL){
 		if(tp == NULL) return;
 		printf("%s", separator);
 		printf("\n - Tunnel parameters - ");
@@ -851,7 +943,8 @@ void printResponse(const unsigned int type){
 		printf("%s", separator);
 	}
 
-	if((type == UPMT_C_SET_RULE)||(type == UPMT_C_GET_RULE)){
+	//if((type == UPMT_C_SET_RULE)||(type == UPMT_C_GET_RULE)){
+	if(type == UPMT_C_SET_RULE){
 		if(key == NULL) return;
 		printf("%s", separator);
 		printf("\n - Rule parameters - ");

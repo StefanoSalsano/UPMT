@@ -1,0 +1,6 @@
+To compile, just type 'make'.
+If you want to compile the module in kernel user mode type 'make um'.
+
+To test, type 'insmod upmt.ko'.
+To verify the module is loaded type 'dmesg'.
+This source tree compiles and works fine for the 2.6.32.8 vanilla kernel.

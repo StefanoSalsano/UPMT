@@ -1,11 +1,23 @@
 package upmt.client;
 
+import java.io.IOException;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.BufferedWriter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.Enumeration;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Hashtable;
+import java.util.Iterator;
+import java.util.Map.Entry;
+import java.util.Set;
 import java.util.Vector;
 
+import org.zoolu.sip.provider.SipProvider;
 import org.zoolu.tools.Log;
 import org.zoolu.tools.Logger;
 
@@ -13,6 +25,15 @@ import org.zoolu.tools.Logger;
 //	import android.content.Context;
 //	import android.widget.Toast;
 //#endif
+
+
+
+
+
+
+
+
+
 
 import upmt.Default;
 import upmt.TunnelInfo;
@@ -37,16 +58,38 @@ import upmt.client.core.Socket;
 import upmt.client.network.NetworkMonitor;
 import upmt.client.network.NetworkMonitorFactory;
 import upmt.client.network.NetworkMonitorListener;
+import upmt.client.rme.DDSQoSTunnelInfo;
+import upmt.client.rme.DDSQosReceiver;
+import upmt.client.rme.RMEInterface;
 import upmt.client.rme.RoutingCheck;
+import upmt.client.rme.VipaMeasures;
+import upmt.client.rme.VipaTunnel;
 import upmt.client.sip.SipSignalManager;
 import upmt.client.tunnel.TunnelManager;
 import upmt.os.Module;
 import upmt.os.Shell;
+import upmt.server.UPMTServer;
+import upmt.server.rme.RMEServer;
+import upmt.server.rme.RMETunnelInfo;
 
 public class UPMTClient implements NetworkMonitorListener, ApplicationManagerListener, ApplicationMonitorListener
 {
 	/** set to true when developing the GUI */
 	public static final boolean ONLY_GUI = false;
+
+	public static final boolean textMode = false;
+
+	public static final boolean coreEmulator = false;
+
+	public static final boolean crossTunnel = true;
+
+	public static final boolean blockerAssociation = true; 
+
+	public static final boolean grapher3D = true;
+
+	public static boolean DDSQoSReceiver = true;
+
+	public static boolean interfaceBalance = false;
 
 	static{System.setProperty("java.net.preferIPv4Stack", "true");}
 
@@ -68,7 +111,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	private static final String WIZARD_DESC = "Wizard";
 
 
-	private static ConfigManager cfg;
+	public static ConfigManager cfg;
 	private static String cfgFile;
 
 	/** Object to perform logging */
@@ -107,7 +150,12 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	public static Vector<String> getCfgANList() {
 		return cfgANList;
 	}
-
+	/**
+	 * Add an AN to ANlist
+	 */
+	public static void addCfgAnlist(String anAddress) {
+		cfgANList.add(anAddress);
+	}
 
 	/**
 	 * hastable of active and associated ANs vs. their TSA port number
@@ -123,14 +171,133 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 	//Radio Multiple Eterogenee
 	private static boolean rme;
-	private static String rmeConfig;
 	private static ArrayList<String> rmeInterfacesList;
+	private static HashMap<String, SipProvider> signalers;
+	private RoutingCheck routingCheck;
+	public static ArrayList<RMEInterface> rmeAddresses = new ArrayList<RMEInterface>();
+	public static String[] rmeAssocAddress;
 
+	private DDSQosReceiver ddsQosReceiver;
+
+	public static HashMap<String, RMETunnelInfo> RMEremoteTidStatusTable = new HashMap<String, RMETunnelInfo>(); 
+
+	/**
+	 * HashTable which contains all the tunnels <ifname, anAddress>
+	 */
+	public Hashtable<String, String> rmeTunnelIpInterfaceList = new Hashtable<String, String>();
+
+	/**
+	 * ArrayList which contains only the direct tunnel <anAddress:ifname>
+	 */
+	public ArrayList<String> rmeDirectTunnel = new ArrayList<String>();
+
+	/**
+	 * ArrayList which contains the RME servers
+	 */
+	private static ArrayList<RMEServer> servers = new ArrayList<RMEServer>();
+
+	public static boolean firstTunnel = true; // provvisorio
+
+	public static ArrayList<String> RMETunnelsToGUI = new ArrayList<String>(); 
+
+	/**
+	 * hashtable of policies (expressed as strings) for each application 
+	 * it starts from cfg.rmeApplicationPolicy read from cfg file, then in UPMTClient.putRMEPoliciesToHastable
+	 * 
+	 */
+	private HashMap<String, ArrayList<String>> rmeCfgPolicy = new HashMap<String, ArrayList<String>>(); 
+
+
+	/**
+	 * HashMap of tunnel list vs. Vipa
+	 */
+	public HashMap<String, ArrayList<VipaTunnel>> rmePerVipaTunnelList = new HashMap<String, ArrayList<VipaTunnel>>();
+
+	/**
+	 * HashMap of best tunnel for each Vipa
+	 */
+	public HashMap<String, TunnelInfo> rmePerVipaBestTunnel = new HashMap<String, TunnelInfo>();
+
+	/**
+	 * HashMap of best tunnel for each Vipa
+	 */
+	public HashMap<String, RMETunnelInfo> rmePerVipaBestTunnelServer = new HashMap<String, RMETunnelInfo>();
+
+	/**
+	 * HashMap of best tunnel for each Vipa
+	 */
+	public HashMap<String, DDSQoSTunnelInfo> rmePerVipaBestTunnelDDS = new HashMap<String, DDSQoSTunnelInfo>();
+
+	/**
+	 * HashMap DDS Vipa for Qos in millisecondi
+	 */
+	public HashMap<String, Integer> ddsQoS = new HashMap<String, Integer>();
+
+	/**
+	 * hashtable (application name -> policy )
+	 * for the active applications (i.e. with open sockets)
+	 */
+	private HashMap<String, String> rmeOpenedPolicy = new HashMap<String, String>();
+
+	/**
+	 * hashtable (application name -> policy )<BR>
+	 * for the closed applications (i.e. without any open sockets)
+	 */
+	private HashMap<String, String> rmeClosedPolicy = new HashMap<String, String>();
+
+	/**
+	 * HashMap (application opend -> tunnel)<BR>
+	 * for the active applications (with assigned tunnel)
+	 */
+	private HashMap<String, HashMap<String, Integer>> rmeOpenedAppToTunnel = new HashMap<String, HashMap<String,Integer>>();
+
+	/**
+	 * List of closed rme applications which need a tunnel policy
+	 */
+	public HashMap<String, HashMap<String, Integer>> rmeClosedAppToTunnel = new HashMap<String, HashMap<String,Integer>>();
+
+
+	/**
+	 * List of rme policy event
+	 */
+	public final static int RME_EVENT_START = 0;
+	public final static int RME_EVENT_INTERFACE_UP = 1;
+	public final static int RME_EVENT_INTERFACE_DOWN = 2;
+	public final static int RME_EVENT_TUN_UP = 3;
+	public final static int RME_EVENT_TUN_DOWN = 4;
+	public final static int RME_EVENT_TUN_UPDATE = 5;
+
+	/**
+	 * application registered for each event<BR>
+	 * the rmeEventRegister is initialized in the constructor of UPMTClient with the events:<BR>
+	 * RME_EVENT_START, RME_EVENT_INTERFACE_UP, RME_EVENT_INTERFACE_DOWN RME_EVENT_TUN_UP RME_EVENT_TUN_DOWN<BR>
+	 * the set of events is retrieved with eventRegister.keySet()<BR>
+	 * for each event a ArrayList of String contains the applications that needs to be
+	 * notified of such event
+	 */
+	private static HashMap<Integer, ArrayList<String>> rmeEventRegister = new HashMap<Integer, ArrayList<String>>();
+
+	private HashMap<String, String[]> rmeDiscoveredAddresses = new HashMap<String, String[]>();
+
+	/**
+	 * List of currents endpoint discovered by olsr
+	 */
+	public ArrayList<String> olsrDetectedEndPoint = new ArrayList<String>();
+
+	public static HashMap<String, String> ipToVipa = new HashMap<String, String>();
+	/**
+	 * hashtable (ifname -> SipProvider) 
+	 * stores the sipProviders used to send KA messages towards any AN for each given interface
+	 */
+	private Hashtable<Integer, SipProvider> tunnelProviders = new Hashtable<Integer, SipProvider>();
 
 	//****************************************POLICY****************************************	
 
 	/**
-	 * hashtable of policies (expressed as strings) for each application as read from cfg file
+	 * hashtable of policies (expressed as strings) for each application 
+	 * it starts from cfg.applicationPolicy read from cfg file, then in UPMTClient.putPoliciesToHastable
+	 * it removes [ ] and , with ""
+	 * 
 	 */
 	private Hashtable<String, String> cfgPolicy = new Hashtable<String, String>();
 	/**
@@ -205,7 +372,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	//exception
 	private Vector <String> noUpmtApp= new Vector<String>(Arrays.asList(cfg.noUpmtApp)); //TODO: COMPLETAMENTE DA FARE!!!! MODIFICARE L'APPMON E IL MODULO!!!!
 
-	/**p
+	/**
 	 * application registered for each event<BR>
 	 * the eventRegister is initialized in the constructor of UPMTClient with the events:<BR>
 	 * EVENT_START, EVENT_INTERFACE_UP, EVENT_INTERFACE_DOWN EVENT_AN_UP EVENT_AN_DOWN<BR>
@@ -242,7 +409,12 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	{
 		statusMsg = "Initializing...";
 		//#endif
-		file = file!=null?file:Default.CLIENT_CONFIG_FILE;
+		if(rme) {
+			file = file!=null?file:Default.PEER_CONFIG_FILE;
+		}
+		else {
+			file = file!=null?file:Default.CLIENT_CONFIG_FILE;
+		}
 		UPMTClient.cfg = ConfigManager.instance();
 		UPMTClient.cfgFile = file;
 		cfg.ParseConfig(file);
@@ -252,43 +424,50 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			return;
 		}
 
-		//#ifndef ANDROID		
-		if (cfg.sipID==null || (cfg.ANList.size()==0 && cfg.ANBrokerList.size() == 0))
-			new PopUpWindows(new String[]{WIZARD_AN, WIZARD_Broker, WIZARD_SIP}, new String[]{cfg.ANList.size() >= 1 ? cfg.ANList.get(0) : "", cfg.ANBrokerList.size() >= 1 ? cfg.ANBrokerList.get(0) : "", cfg.sipID},  WIZARD_DESC, new PopUpListener() {
-				public void done(Vector<String> ret) {
 
-					boolean quit0 = false;
-					boolean quit1 = false;
+		if(rme) {
 
-					if (ret==null || ret.size()!=3) quit0 = quit1 = true;
-
-					if (!ret.get(0).contains(":")) quit0 = true;
-					try{Integer.parseInt(ret.get(0).split(":")[1].trim());}
-					catch(Exception e) {quit0 = true;}
-
-					if (!ret.get(1).contains(":")) quit1 = true;
-					try{Integer.parseInt(ret.get(1).split(":")[1].trim());}
-					catch(Exception e) {quit1 = true;}
-
-					if(quit0 && quit1)
-						quitGui();
-
-					if(!quit0){
-						cfg.ANList = new Vector<String>(Arrays.asList(new String[]{ret.get(0)}));
-						cfg.writeTag(Default.ANList_TAG, ret.get(0));
-					}
-					if(!quit1){
-						cfg.ANBrokerList = new Vector<String>(Arrays.asList(new String[]{ret.get(1)}));
-						cfg.writeTag(Default.ANBrokerList_TAG, ret.get(1));
-					}
-					cfg.sipID = ret.get(2);
-					cfg.writeTag(Default.sipID_Tag, ret.get(2));
-
-					instance().run();
-				}
-			}).setVisible(true);
-		else {
 			instance().run();
+		}
+		else {
+			//#ifndef ANDROID		
+			if (cfg.sipID==null || (cfg.ANList.size()==0 && cfg.ANBrokerList.size() == 0))
+				new PopUpWindows(new String[]{WIZARD_AN, WIZARD_Broker, WIZARD_SIP}, new String[]{cfg.ANList.size() >= 1 ? cfg.ANList.get(0) : "", cfg.ANBrokerList.size() >= 1 ? cfg.ANBrokerList.get(0) : "", cfg.sipID},  WIZARD_DESC, new PopUpListener() {
+					public void done(Vector<String> ret) {
+
+						boolean quit0 = false;
+						boolean quit1 = false;
+
+						if (ret==null || ret.size()!=3) quit0 = quit1 = true;
+
+						if (!ret.get(0).contains(":")) quit0 = true;
+						try{Integer.parseInt(ret.get(0).split(":")[1].trim());}
+						catch(Exception e) {quit0 = true;}
+
+						if (!ret.get(1).contains(":")) quit1 = true;
+						try{Integer.parseInt(ret.get(1).split(":")[1].trim());}
+						catch(Exception e) {quit1 = true;}
+
+						if(quit0 && quit1)
+							quitGui();
+
+						if(!quit0){
+							cfg.ANList = new Vector<String>(Arrays.asList(new String[]{ret.get(0)}));
+							cfg.writeTag(Default.ANList_TAG, ret.get(0));
+						}
+						if(!quit1){
+							cfg.ANBrokerList = new Vector<String>(Arrays.asList(new String[]{ret.get(1)}));
+							cfg.writeTag(Default.ANBrokerList_TAG, ret.get(1));
+						}
+						cfg.sipID = ret.get(2);
+						cfg.writeTag(Default.sipID_Tag, ret.get(2));
+
+						instance().run();
+					}
+				}).setVisible(true);
+			else {
+				instance().run();
+			}
 		}
 		//#else
 		//				instance().run();
@@ -312,7 +491,11 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			return;
 		}
 
-		Module.setVipaFix(cfg.vipaFix);
+		if(rme) {
+			Module.setVipaFix(cfg.vepa);
+		} else {
+			Module.setVipaFix(cfg.vipaFix);
+		}
 		//#ifndef ANDROID
 		logger = new Logger(new Log(cfg.logFile, cfg.logLevel));
 		//#else
@@ -326,48 +509,73 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		networkMonitor = NetworkMonitorFactory.getMonitor(cfg.networkMonitor);
 		networkMonitor.setInterfToSkip(cfg.interfToSkip);
 
-		appManager = ApplicationManagerFactory.getApplicationManager(cfg.applicationManager);
+		if (!coreEmulator) appManager = ApplicationManagerFactory.getApplicationManager(cfg.applicationManager);
 		appMonitor = ApplicationMonitorFactory.getApplicationMonitor(cfg.applicationMonitor);
+		appMonitor.setClient(this);
 
 		//Anchor Node
 		maxANNumber = cfg.anNumber;
-		cfgANList = cfg.ANList; //TODO: meglio fare una copia per eventuali modificke
-
 		//Radio Multiple Eterogenee 
-		rme = cfg.rme;
 		if(rme) {
-			rmeConfig = cfg.rmeConfig;
-			rmeInterfacesList = new ArrayList<String>(Arrays.asList(cfg.rmeInterfaces));
-			//cfg.rmeInterfaces = rmeInterfacesList.toArray(new String[]{});
+			interfaceBalance = cfg.interfaceBalance;
+			if (!coreEmulator) ((GUIApplicationManager) this.appManager).setLoadBalance();
+			ddsQosReceiver = new DDSQosReceiver(cfg.vepa, cfg.ddsQosPort, this);
+			rmeAddresses = RMEInterface.parseConfiguration(cfg.rmeNet, cfg.adhocwlan);
+			rmeInterfacesList = new ArrayList<String>(Arrays.asList(RMEInterface.getInterfacesNames(rmeAddresses)));
+			rmeAssocAddress = RMEInterface.getInterfacesAddresses(rmeAddresses);
+			ArrayList<String> olsrdConf = cfg.olsrdConf;
+
+			cfgANList = new Vector<String>();
+
+			rmeEventRegister.put(RME_EVENT_START, new ArrayList<String>());
+			rmeEventRegister.put(RME_EVENT_INTERFACE_UP, new ArrayList<String>());
+			rmeEventRegister.put(RME_EVENT_INTERFACE_DOWN, new ArrayList<String>());
+			rmeEventRegister.put(RME_EVENT_TUN_UP, new ArrayList<String>());
+			rmeEventRegister.put(RME_EVENT_TUN_DOWN, new ArrayList<String>());
+			rmeEventRegister.put(RME_EVENT_TUN_UPDATE,  new ArrayList<String>());
+			for(RMEServer server: servers) {
+				server.setUpmtClient(this);
+			}
+
+		} else {
+			cfgANList = cfg.ANList; //TODO: meglio fare una copia per eventuali modificke
+			//initialize the policies
+			cfgDefaultPolicy = Arrays.toString(cfg.defaultAppPolicy.toArray(new String[] {}))
+					.replace("[", "").replace("]", "").replace(",", "");
+
+			System.err.println("\n*********************************\n\nDefault_app_policy in cfg file: " + cfg.defaultAppPolicy + "\n\n*********************************");
+
+			//marco  SET DEFAULT AN POLICY IF PRESENT
+
+
+			defaultClosedPolicy = InterfPolicyFactory.getPolicy(null,cfgDefaultPolicy);
+
+
+			eventRegister.put(EVENT_START, new Vector<String>());
+			eventRegister.put(EVENT_INTERFACE_UP, new Vector<String>());
+			eventRegister.put(EVENT_INTERFACE_DOWN, new Vector<String>());
+			eventRegister.put(EVENT_AN_UP, new Vector<String>());
+			eventRegister.put(EVENT_AN_DOWN, new Vector<String>());
 		}
-
-		//initialize the policies
-		cfgDefaultPolicy = Arrays.toString(cfg.defaultAppPolicy.toArray(new String[] {}))
-				.replace("[", "").replace("]", "").replace(",", "");
-
-		System.err.println("\n*********************************\n\nDefault_app_policy in cfg file: " + cfg.defaultAppPolicy + "\n\n*********************************");
-
-		//marco  SET DEFAULT AN POLICY IF PRESENT
-
-
-
-		defaultClosedPolicy = InterfPolicyFactory.getPolicy(null,cfgDefaultPolicy);
-
-
-		eventRegister.put(EVENT_START, new Vector<String>());
-		eventRegister.put(EVENT_INTERFACE_UP, new Vector<String>());
-		eventRegister.put(EVENT_INTERFACE_DOWN, new Vector<String>());
-		eventRegister.put(EVENT_AN_UP, new Vector<String>());
-		eventRegister.put(EVENT_AN_DOWN, new Vector<String>());
-
 		setSignalingPolicy();
-
+		if(cfg.keepaliveKernel) {
+			if(cfg.keepalivePeriod>cfg.keepaliveTimeout) {
+				printLog("Check your keepalive kernel configuration in peer.cfg, timeout must be greater or almost equals then period", Log.LEVEL_HIGH);
+				stop();
+				
+			}
+		}
 		//InterfPolicyFactory.setEventRegister(eventRegister);
 
 	}
 
 
 	//marco
+	/**
+	 * for all applications listed in cfg files, it sets the policy into hashtable, register the application
+	 * to events (in the InterfPolicyFactory.getPolicy method) and adds the application to closedPolicy hash map
+	 * then it tells the appmonitor which tunnel to use for new connections
+	 */
 	private void putPoliciesToHashtable() {
 
 		for (String appName : cfg.applicationPolicy.keySet())
@@ -484,8 +692,10 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 	}
 
-
-
+	/**
+	 * it sets the default AN and then a default policy to be used if applications do not have a policy
+	 * then it tells to the appmonitor which is the default tunnel to be used at connection setup
+	 */
 	private void configureDefaultPolicy(){
 		if (cfgDefaultPolicy.contains("-AN=")){
 
@@ -498,7 +708,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 			ANPolicy defAnPolicy = ANPolicyFactory.getPolicy(null, cfgDefaultANPolicy);
 			if (defAnPolicy!=null){
-				defaultAN=defAnPolicy.getActiveAN(associatedANList, null, EVENT_START);				
+				defaultAN=defAnPolicy.getActiveAN(associatedANList, null, EVENT_START);	
 			}
 			else defaultAN=signaler.getDefaultAN();
 
@@ -524,17 +734,14 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 
 	private void run() {
-		
-		if(rme) {
-			RoutingCheck.initialize();
-		}
 
 		if (ONLY_GUI) {
 			appManager.startListen(this);
 			return;
 		}
 
-		appManager.startListen(this);
+		if (!coreEmulator) appManager.startListen(this);
+
 
 		printLog("Scanning network interface and performing UPMT associations!!!", Log.LEVEL_LOW);
 
@@ -549,13 +756,11 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 				availableIfs.put(ifName, newIf);
 				tunnelManager.addInterface(ifName, newIf);
 				System.out.println("INITIAL START " + newIf.id);
+
+				if(rme) runOlsrd(ifName);
 			}
 
-			if(rme) {
-				RoutingCheck.runMH();
-			}
-
-			downloadANList();
+			if(!rme) downloadANList();
 
 			//for each anchor node and for all the availableIfs
 			//it checks on which interfaces it is possible to contact
@@ -564,34 +769,49 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			networkMonitor.startListen(this); //monitor changes of network interfaces
 			//GUIApplicationManager for commands given by the user on the GUI
 			//like save policy, apply policy
-			appManager.startWorking(); 	
+			if(!UPMTClient.textMode) {
+				appManager.startWorking(); 	
+			}
+			appMonitor.setClient(this);
 			appMonitor.startListen(this); 	//per l'apertura o chiusura di applicazioni
 
-			updateMsg("Trying to contact Anchor Node(s)...");
+			if(rme) {
+				putRMEPoliciesToHashtable();
+				routingCheck = new RoutingCheck(this);
+				routingCheck.startRME();
+				ddsQosReceiver.startDDSQosThread();
 
-			while(associatedANList.size() == 0)
-				for (String ANAddress : cfgANList) {
-					if (associatedANList.size() < maxANNumber) {
-						String[] token = ANAddress.split(":");
-						synchronized(availableIfs) {
-							for (String interf : availableIfs.keySet()) {
-								if(addANonIf(token[0].trim(), interf, true)){					
-									createAllTunnelsToAN(token[0].trim(), associatedANList.get(token[0].trim()));
-									signaler.startKeepALiveThread();
-									break;
+			} else {
+				updateMsg("Trying to contact Anchor Node(s)...");
+				while(associatedANList.size() == 0) {
+					for (String ANAddress : cfgANList) {
+						if (associatedANList.size() < maxANNumber) {
+							String[] token = ANAddress.split(":");
+							synchronized(availableIfs) {
+								for (String interf : availableIfs.keySet()) {
+									if(addANonIf(token[0].trim(), interf, true)){					
+										createAllTunnelsToAN(token[0].trim(), associatedANList.get(token[0].trim()));
+										signaler.startKeepALiveThread();
+										break;
+									}
 								}
 							}
 						}
 					}
 				}
+			}
 
-			//#ifndef ANDROID
-			((GUIApplicationManager) appManager).startGraphers();
-			//#endif
+			if(!textMode) {
+				//#ifndef ANDROID
+				((GUIApplicationManager) appManager).startGraphers();
+				//#endif
+			}
 
 
-			configureDefaultPolicy();
-			putPoliciesToHashtable();
+			if(!rme) {
+				configureDefaultPolicy();
+				putPoliciesToHashtable();
+			}
 
 			//MARCO cambiata ipotesi del'if
 			//if (defaultAN != null) {
@@ -612,7 +832,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		//used by SipSignalManager
 		//it notifies UPMT client when an AN is added (endAddAN)
 		//it performs a registration procedure
-		signaler.startListen(this); 
+		//		signaler.startListen(this); 
 
 		printLog("END OF SETUP!!! Start listening events..."+ CRLF, Log.LEVEL_LOW);
 
@@ -631,7 +851,9 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	public void updateMsg (String msg) {
 		statusMsg = msg;
 		//#ifndef ANDROID
-		((GUIApplicationManager)appManager).refreshStatusBarAndFirstRow();
+		if(!textMode) {
+			((GUIApplicationManager)appManager).refreshStatusBarAndFirstRow();
+		}
 		//#else
 		//				Toast.makeText(getContext(), statusMsg, Toast.LENGTH_SHORT).show();
 		//#endif
@@ -723,7 +945,16 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 	public void stop()
 	{
-		if (rme) RoutingCheck.stopMH(); //Radio Multiple Eterogenee
+		if (rme) routingCheck.stopRME(); //Radio Multiple Eterogenee
+		if (rme) {
+			try {
+				Runtime.getRuntime().exec("sudo killall olsrd");
+				ddsQosReceiver.stopDDSQosThread();
+			} catch (IOException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+		}
 		if (availableIfs!=null) this.flushTables();
 		if (appMonitor!=null) appMonitor.stop();
 		if (tunnelManager!=null) tunnelManager.stop();
@@ -751,11 +982,24 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			tunnelManager.addInterface(ifName, newIf);
 			System.out.println("UPMTCLIENT addinterface " + newIf.id);
 
-			for (String ANAddress : associatedANList.keySet()) {
-				long result = tunnelSetup(ifName, ANAddress, associatedANList.get(ANAddress));
-			}
 
-			checkAllPolicy(EVENT_INTERFACE_UP);
+			if(rme) {
+				String resultTsa;
+				resultTsa = Module.upmtconf(new String[]{"-a", "tsa", "-i", ifName, "-l", "50000"});
+				System.out.println(resultTsa);
+				for (String ANAddress : associatedANList.keySet()) {
+					long result = tunnelSetup(ifName, ANAddress, associatedANList.get(ANAddress));
+					String ePVipa = getVipa(ANAddress);
+					checkAllRMEPolicy(ePVipa, RME_EVENT_TUN_UP);
+				}
+			}
+			else {
+				for (String ANAddress : associatedANList.keySet()) {
+					long result = tunnelSetup(ifName, ANAddress, associatedANList.get(ANAddress));
+
+				}
+				checkAllPolicy(EVENT_INTERFACE_UP);
+			}
 		}
 	}
 
@@ -771,7 +1015,15 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			printLog("removed: " + ifName + " from appManager", Log.LEVEL_HIGH);
 			InterfaceInfo oldIf = availableIfs.remove(ifName);
 
-			checkAllPolicy(EVENT_INTERFACE_DOWN);
+			if(rme) {
+				for (String ANAddress : associatedANList.keySet()) {
+					String ePVipa = getVipa(ANAddress);
+					checkAllRMEPolicy(ePVipa, RME_EVENT_TUN_UP);
+				}
+			}
+			else {
+				checkAllPolicy(EVENT_INTERFACE_DOWN);
+			}
 
 			tunnelManager.removeInterface(ifName, oldIf, associatedANList.keySet());
 		}
@@ -792,7 +1044,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	 * evaluates all the policies following a given event, to check if it is needed to change the
 	 * interface for an application 
 	 */
-	private void checkAllPolicy(int event) {
+	public void checkAllPolicy(int event) {
 		if (signalingPolicy.isTriggeredBy(event)) { 
 			String newInterf = signalingPolicy.getActiveInterf(availableIfs.filterOnSignalingOK(defaultAN), signalingInterface, event);
 
@@ -816,9 +1068,16 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			}
 		}
 
-		appManager.onPolicyCheck();
+		if (!coreEmulator) appManager.onPolicyCheck();
 	}
 
+	/**
+	 * applica la politica associata ad una applicazione quando si e' verificato un certo evento
+	 * applies the policy associated to an application when a given event has happened
+	 * @param appName
+	 * @param event the event that has happened
+	 *           (EVENT_START / EVENT_INTERFACE_UP / EVENT_INTERFACE_DOWN / EVENT_AN_UP / EVENT_AN_DOWN )
+	 */
 	public void checkSinglePolicy(String appName, int event) {
 		if (openedPolicy.containsKey(appName)) { //APP OPENED (i.e. it has open sockets)
 			InterfPolicy policy = openedPolicy.get(appName);
@@ -863,7 +1122,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	 * @param ANAddress
 	 * @param sipPort
 	 */
-	private boolean addANonIf(String ANAddress, String interf, boolean blocking) {
+	public boolean addANonIf(String ANAddress, String interf, boolean blocking) {
 		InterfaceInfo ifInfo;
 		ifInfo = availableIfs.get(interf);
 		if (ifInfo!=null){
@@ -879,6 +1138,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		else 
 			return false;
 	} 
+
 
 	/** 
 	 * OLD VERSION adds an Anchor Node, performing the association Request to obtain the VIPA, then
@@ -913,11 +1173,16 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 					long result = tunnelSetup(ifName, ANAddress, tsaPort);
 
 					//#ifndef ANDROID
-					((GUIApplicationManager)getGui()).refreshGui();
+					if(!textMode) {
+						((GUIApplicationManager)getGui()).refreshGui();
+					}
 					//#endif
 
 				}
 			}
+		}
+		if(!textMode) {
+			((GUIApplicationManager)appManager).refreshGui();
 		}
 
 	}
@@ -943,25 +1208,72 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 
 
+
+
 	//kiamato qnd viene aggiunta un interfaccia o un AN
-	public long tunnelSetup(String ifName, String ANAddress, int tsaPort) {		
+	public synchronized long tunnelSetup(String ifName, String ANAddress, int tsaPort) {		
+
+		//		System.err.println("-----------------------------------------------");
+		//		System.err.println("TUNNEL SETUP FOR "+ANAddress+" on INTERFACE "+ifName+" with port: "+tsaPort);
+		//		System.err.println("thread---> "+Thread.currentThread().getId());
+		//		System.err.println("-----------------------------------------------");
+
+
 		String vipaForThisAN = signaler.getVipaForAN(ANAddress);
+		if(rme) {
+			if(tunnelManager.getTid(ifName, ANAddress)!=UPMTClient.TID_DROP) {
+				return 0;
+			}
+			if(tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+ANAddress)) {
+				return 0;
+			}
+			else {
+				tunnelManager.getTemporaryTunnelSetup().add(ifName+":"+ANAddress);
+			}
+		}
 		int result = tunnelManager.addTunnel(vipaForThisAN, ifName, ANAddress, tsaPort);
+
 		printLog("LocalTunnelID: " + result,Log.LEVEL_HIGH );
 		if (result==0) {
+			if(rme) {
+				if(tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+ANAddress)) {
+					tunnelManager.getTemporaryTunnelSetup().remove(ifName+":"+ANAddress);
+				}
+			}
 			printLog("ATTENTION: LocalTunnelID should not be 0 ",Log.LEVEL_HIGH );
 			return result;
 		}
 
 		//blocking call
-		int result1 = signaler.createTunnel(ifName, ANAddress);
+		int result1 = signaler.createTunnel(ifName, ANAddress, result);
 
 		if (result1==0) {
 			tunnelManager.removeTunnel(ifName, ANAddress);
+			if(rme) {
+				if(tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+ANAddress)) {
+					tunnelManager.getTemporaryTunnelSetup().remove(ifName+":"+ANAddress);
+				}
+			}
 			return 0;
+		}
+		else {
+			if(cfg.keepaliveKernel) {
+				String[] par = new String[]{"-k", "on", "-n", ""+result};
+				String moduleResult = Module.upmtconf(par);
+				if(rme) {
+					if(tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+ANAddress)) {
+						tunnelManager.getTemporaryTunnelSetup().remove(ifName+":"+ANAddress);
+					}
+				}
+			}
+		}
+		if(!textMode) {
+			((GUIApplicationManager) appManager).refreshGui();
+
 		}
 
 		return ((long)result1)<<32 + (long)result;
+
 	}
 
 	//usata solo nella rimozione di AN xke' nella rimozione di interf si levano tutti in automatico.
@@ -1024,73 +1336,206 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	//***********************ApplicationMonitor***************************
 	/** an application has started */
 	public void appOpened(String appName) {
-		if (closedPolicy.containsKey(appName)) {
-			//the application was closed (i.e. no sockets) and its policy was already set in the closedPolicy 
-			openedPolicy.put(appName, closedPolicy.remove(appName));
-
-			//TODO new code
-			//String currentIf = openedPolicy.get(appName).getActiveInterf(availableIfs.filterOnCanUseTunnel(getSelectedAN(appName)),null, EVENT_START); 
-			//closedInterface.remove(appName);
-
-			//TODO old code
-			String currentIf = closedInterface.remove(appName);
-
-			if (currentIf !=null){
-				openedInterface.put(appName, currentIf);
-				System.err.println("\nSending " + appName + " traffic on interface " + currentIf + "\n");
+		if(rme) {
+			if(rmeClosedPolicy.containsKey(appName)) {
+				//the application was closed (i.e. no sockets) and its policy was already set in the rmeClosedPolicy 
+				rmeOpenedPolicy.put(appName, rmeClosedPolicy.remove(appName));
+				if(rmeClosedAppToTunnel.containsKey(appName)) {
+					HashMap<String, Integer> vipaToTunnel = rmeClosedAppToTunnel.remove(appName);
+					if(vipaToTunnel.size()!=0) {
+						if(!rmeOpenedAppToTunnel.containsKey(appName)) {
+							rmeOpenedAppToTunnel.put(appName, new HashMap<String, Integer>());
+						}
+						rmeOpenedAppToTunnel.put(appName, vipaToTunnel);
+						for(String vipa: vipaToTunnel.keySet()) {
+							int currentTid = vipaToTunnel.get(vipa);
+							System.out.println("\nSending " + appName + " traffic on tunnel TID: " + currentTid + " for VIPA: "+vipa+"\n");
+						}
+					} else {
+						//lo leva dalla lista se non ha una lista di vipa con tid già settato ma non è corretto da --->vedere
+						rmeOpenedAppToTunnel.remove(appName);	
+					}
+				}
+				else {
+					rmeOpenedAppToTunnel.remove(appName);
+				}
 			} else {
-				openedInterface.remove (appName);
+				// the application was not included in the rmeclosedPolicy dropped
+				printLog("Unknown "+appName+", application shall be dropped", Log.LEVEL_HIGH);
+				appMonitor.setApp(appName, TID_DROP);
 			}
-		} else { 
-			// the application was not included in the closedPolicy
 
-			//InterfPolicy policy = InterfPolicyFactory.getPolicy(appName, tmpDefaultPolicy!=null? tmpDefaultPolicy:cfgDefaultPolicy);//FIXME
-			InterfPolicy policy = InterfPolicyFactory.getPolicy(appName, cfgDefaultPolicy);
-			if (policy==null) {
-				printLog("Policy null for app: "+appName, Log.LEVEL_HIGH);
-				return;
-			}
-			openedPolicy.put(appName, policy);
+		} else {
+			if (closedPolicy.containsKey(appName)) {
+				//the application was closed (i.e. no sockets) and its policy was already set in the closedPolicy 
+				openedPolicy.put(appName, closedPolicy.remove(appName));
 
-			synchronized (availableIfs) {
-				String activeIf = policy.getActiveInterf(availableIfs.filterOnCanUseTunnel(getSelectedAppAN(appName)),null, EVENT_START); 
-				if (activeIf!=null) {
-					openedInterface.put(appName, activeIf);
-					System.err.println("\nSending " + appName + " traffic on interface " + activeIf + "\n");
+				//TODO new code
+				//String currentIf = openedPolicy.get(appName).getActiveInterf(availableIfs.filterOnCanUseTunnel(getSelectedAN(appName)),null, EVENT_START); 
+				//closedInterface.remove(appName);
+
+				//TODO old code
+				String currentIf = closedInterface.remove(appName);
+
+				if (currentIf !=null){
+					openedInterface.put(appName, currentIf);
+					System.out.println("\nSending " + appName + " traffic on interface " + currentIf + "\n");
 				} else {
-					openedInterface.remove(appName);
+					openedInterface.remove (appName);
+				}
+			} else { 
+				// the application was not included in the closedPolicy
+
+				//InterfPolicy policy = InterfPolicyFactory.getPolicy(appName, tmpDefaultPolicy!=null? tmpDefaultPolicy:cfgDefaultPolicy);//FIXME
+				InterfPolicy policy = InterfPolicyFactory.getPolicy(appName, cfgDefaultPolicy);
+				if (policy==null) {
+					printLog("Policy null for app: "+appName, Log.LEVEL_HIGH);
+					return;
+				}
+				openedPolicy.put(appName, policy);
+
+				synchronized (availableIfs) {
+					String activeIf = policy.getActiveInterf(availableIfs.filterOnCanUseTunnel(getSelectedAppAN(appName)),null, EVENT_START); 
+					if (activeIf!=null) {
+						openedInterface.put(appName, activeIf);
+						System.err.println("\nSending " + appName + " traffic on interface " + activeIf + "\n");
+					} else {
+						openedInterface.remove(appName);
+					}
 				}
 			}
 		}
-
-		appManager.addApp(appName);
+		if (!coreEmulator) appManager.addApp(appName);
 	}
 
 	public void socketOpened(String appName, Socket socket) {
+		boolean found = false;
 		synchronized(socketForApp) {
 			if(!socketForApp.containsKey(appName)) socketForApp.put(appName, new Vector<Socket>(Arrays.asList(new Socket[]{socket})));
-			else socketForApp.get(appName).add(socket);
-			appForSocket.put(socket.id(), appName);
-			appManager.addSocket(appName, socket);
+			else {
+				Iterator<Socket> iterSocket = socketForApp.get(appName).iterator();
+				while(iterSocket.hasNext() && !found) {
+					Socket socketCheck = iterSocket.next();
+					//					if((socketCheck.getProto()).equals(signal.socket.getProto()) &&
+					//							(socketCheck.getVipa()).equals(signal.socket.getVipa()) &&
+					//							(socketCheck.getDstIp()).equals(signal.socket.getDstIp()) && 
+					//							(socketCheck.getDstPort())==(signal.socket.getDstPort()) && 
+					//							(socketCheck.getSrcPort())==(signal.socket.getSrcPort())) {
+					//						found = true;
+					//					}
+					if(socketCheck.id().equals(socket.id())) {
+						found = true;
+						break;
+					}
+				}
+				if(!found) {
+					socketForApp.get(appName).add(socket);
+				}
+
+			}
+			if(!found) {
+				appForSocket.put(socket.id(), appName);
+				if (!coreEmulator) {
+					appManager.addSocket(appName, socket);
+				}
+			}
 		}
+	}
+
+	//Aggiunto metodo per ricavare appName dalla socket.id() (bonus)
+	public String getAppnameFromSocket(Socket socket){
+		String appName = null;
+		synchronized(appForSocket){
+			appName = appForSocket.get(socket.id());
+		}
+		return appName;
+	}
+
+	// controllo se il vector<Socket> relativo a un appname è vuoto (bonus)
+	public boolean isActiveApp(String appName){
+		synchronized(socketForApp){
+			if(socketForApp.containsKey(appName))
+				if(!socketForApp.get(appName).isEmpty())
+					return true;
+		}
+		return false;
 	}
 
 	//TODO: fatto al volo ma va verificato xk� x adesso nel modulo ancora nn c'� la garbage collection
+	//modificata da valerio ora funziona
 	public void socketClosed(Socket socket)
 	{
-		synchronized(socketForApp)
-		{
-			socketForApp.get(appForSocket.remove(socket.id())).remove(socket);
-			appManager.rmvSocket(socket);
+		
+		System.err.println("arrivata notifica di rimozione socket -----> "+socket.id());
+		synchronized(socketForApp) {
+			String appName = appForSocket.remove(socket.id());
+			Vector<Socket> sockVect = socketForApp.get(appName);
+			if (sockVect==null) {
+				return;
+			} else {
+				Iterator<Socket> socketIterator = socketForApp.get(appName).iterator();
+				while(socketIterator.hasNext()) {
+					Socket foundSocket = socketIterator.next();
+					if(foundSocket.id().equals(socket.id())) {
+						socketIterator.remove();
+						if (!coreEmulator) appManager.rmvSocket(socket);
+						break;
+					}
+				}
+			}
 		}
+//		
+//		
+//		
+//		synchronized(socketForApp)
+//		{
+//			socketForApp.get(appForSocket.remove(socket.id())).remove(socket);
+//			if (!coreEmulator) appManager.rmvSocket(socket);
+//		}
 	}
 
-	//TODO!!! Da fare xk� x adesso nel modulo ancora nn c'� la garbage collection.
+	//TODO!!! Da fare xke x adesso nel modulo ancora nn c'e la garbage collection.
+	//rifatta da valerio ora funziona
 	//Quando un app si kiude si elimina la politica dalla lista delle app aperte e si crea 
 	//una nuova politica nella lista delle kiuse a partire dalla stringa del config (come all'avvio)
-	public void appClosed(String appName)
-	{
+	public void appClosed(String appName) {
 
+		if(rme){
+
+			if(rmeOpenedAppToTunnel.containsKey(appName)) {
+				//rimuovo l applicazione dalla lista delle app aperte
+				String policy = rmeOpenedPolicy.remove(appName);
+				//creo una nuova politica a partire dalla stringa del config e l aggiungo nella lista delle applicazioni chiuse
+				rmeClosedPolicy.put(appName, policy);
+				//copio tute i vipa e i tunnel che utilizzavano quella applicazione in rmeClosedAppToTunnel
+				HashMap<String, Integer> vipaToTunnel = rmeOpenedAppToTunnel.remove(appName);
+				rmeClosedAppToTunnel.put(appName, vipaToTunnel);
+				//infine rimuovo l applicazione dall albero posto nella GUIApplicationManager(scheda applications)
+				if (!coreEmulator) appManager.removeApp(appName);
+			}
+
+			// only one peer
+			//			if(!rmeOpenedAppToTunnel.containsKey(appName)) {
+			//				//rimuovo l applicazione dalla lista delle app aperte
+			//				String policy = rmeOpenedPolicy.remove(appName);
+			//				//creo una nuova politica a partire dalla stringa del config e l aggiungo nella lista delle applicazioni chiuse
+			//				rmeClosedPolicy.put(appName, policy);
+			//				//infine rimuovo l applicazione dall albero posto nella GUIApplicationManager(scheda applications)
+			//				appManager.removeApp(appName);
+			//			}
+		}
+		else {
+			// (bonus)
+			if(!openedInterface.contains(appName)) {
+				//rimuovo l applicazione dalla lista delle app aperte
+				openedPolicy.remove(appName);
+				//creo una nuova politica a partire dalla stringa del config e l aggiungo nella lista delle applicazioni chiuse
+				InterfPolicy policy = InterfPolicyFactory.getPolicy(appName, cfgDefaultPolicy);
+				closedPolicy.put(appName, policy);
+				//infine rimuovo l applicazione dall albero posto nella GUIApplicationManager(scheda applications)
+				if (!coreEmulator) appManager.removeApp(appName);
+			}
+		}
 	}
 
 	//***********************ApplicationManager***************************
@@ -1114,7 +1559,6 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			return 0;
 		}
 	}
-
 
 	/**
 	 * we assume that the application is in the hash table of applications that has open sockets
@@ -1198,7 +1642,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		appMonitor.setApp(appName, newInterf==null?TID_DROP:tunnelManager.getTid(newInterf, getSelectedAppAN(appName)));
 		moveAppToInterf(appName, newInterf);
 
-		appManager.onPolicyCheck();
+		if (!coreEmulator) appManager.onPolicyCheck();
 	}
 
 	public String getSipID() {
@@ -1214,15 +1658,27 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	}
 
 	public void updateDefaultAN(){
-		if(signaler.getDefaultAN() != null && cfgDefaultANPolicy != null ){
-			if(cfgDefaultANPolicy.contains(signaler.getDefaultAN())){
+		if(rme) {
+			if(signaler.getDefaultAN() != null) {
 				defaultAN = signaler.getDefaultAN();
-				System.err.println("NEW DEFAULT AN AFTER AN REMOVAL: " + defaultAN);
+				printLog("New default AnchorNode: " + defaultAN, Log.LEVEL_HIGH);
 			}
-		}
-		else{
-			defaultAN = null;
-			System.err.println("NEW DEFAULT AN AFTER AN REMOVAL: " + defaultAN);
+			else{
+				defaultAN = null;
+				printLog("New default AnchorNode: " + defaultAN, Log.LEVEL_HIGH);
+			}
+		} 
+		else {
+			if(signaler.getDefaultAN() != null && cfgDefaultANPolicy != null ){
+				if(cfgDefaultANPolicy.contains(signaler.getDefaultAN())){
+					defaultAN = signaler.getDefaultAN();
+					printLog("New default AnchorNode: " + defaultAN, Log.LEVEL_HIGH);
+				}
+			}
+			else{
+				defaultAN = null;
+				printLog("New default AnchorNode: " + defaultAN, Log.LEVEL_HIGH);
+			}
 		}
 	}
 
@@ -1239,7 +1695,15 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	}
 
 	public String getCurrentPolicy(String appName) {
-		return openedPolicy.get(appName).getDesc();
+		if(openedPolicy!=null && openedPolicy.contains(appName)) {
+			if(openedPolicy.get(appName).getDesc()!=null) {
+				return openedPolicy.get(appName).getDesc();
+			}
+			return null;
+		}
+		else {
+			return null;
+		}
 	}
 
 	public String getStoredPolicy(String appName) {
@@ -1264,7 +1728,9 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 	public void setDefaultAN(String addr) {
 		cfg.ANList = new Vector<String>(Arrays.asList(new String[]{addr}));
-		cfg.writeTag(Default.ANList_TAG, addr);
+		if(!rme) {
+			cfg.writeTag(Default.ANList_TAG, addr);
+		}
 	}
 
 	//TODO: in add e edit ci vuole un controllo ke la policy sia fatta bene (nel senso nome e parametri corretti!)
@@ -1285,7 +1751,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 				closedInterface.remove (appName);
 			}
 		}
-		appManager.onPolicyCheck();
+		if (!coreEmulator) appManager.onPolicyCheck();
 	}
 
 
@@ -1355,7 +1821,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 				appMonitor.setApp(appName,tunnelManager.getTid(newInterf, getSelectedAppAN(appName)));
 
 		}
-		appManager.onPolicyCheck();
+		if (!coreEmulator) appManager.onPolicyCheck();
 	}
 
 
@@ -1379,7 +1845,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 			appMonitor.rmApp(appName);
 			closedInterface.remove(appName);
 		}
-		appManager.onPolicyCheck();
+		if (!coreEmulator) appManager.onPolicyCheck();
 	}
 
 	public void defPolicyEdit(String defPolicy)
@@ -1456,6 +1922,21 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		if (loglevel!=Log.LEVEL_LOW) System.out.println(text);
 	}
 
+	public static void startRMEClient(String[] args, HashMap<String, SipProvider> RMESignalers, ArrayList<RMEServer> RMEServers, boolean isRme) {
+		System.out.println("RMEClient Up and Running");
+
+		String file = null;
+
+		for (int i = 0; i < args.length; i++)
+			if (args[i].equals("-h")) printUsageAndQuit();
+			else if (args[i].equals("-f") && i+1 < args.length) file = args[++i];
+
+		rme = isRme;
+		setServers(RMEServers);
+		setSignalers(RMESignalers);
+		UPMTClient.start(file);
+	}
+
 	//#ifndef ANDROID
 	//*********************** Main method ***************************
 	public static void main(String[] args)
@@ -1465,8 +1946,6 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		for (int i = 0; i < args.length; i++)
 			if (args[i].equals("-h")) printUsageAndQuit();
 			else if (args[i].equals("-f") && i+1 < args.length) file = args[++i];
-
-		//RoutingCheck.initialize(); // serve per il mh package
 
 		UPMTClient.start(file);
 	}
@@ -1498,31 +1977,97 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 
 	public boolean removeAssociatedANAnTryReconnect(String ANAddress) {
 
-		System.err.println("Trying complete restoration of association and tunnels to " + ANAddress);
-
-		associatedANList.remove(ANAddress);
+		if(!rme) {
+			associatedANList.remove(ANAddress);
+		}
 
 		HashSet<String> availableIfsCopy = null;
 
-		synchronized(availableIfs) {
-			availableIfsCopy = new HashSet<String>(availableIfs.keySet());
-		}
+		//		synchronized(availableIfs) {
+		availableIfsCopy = new HashSet<String>(availableIfs.keySet());
+		if(rme) {
+			if(this.rmeTunnelIpInterfaceList.containsKey(ANAddress) && this.olsrDetectedEndPoint.contains(ANAddress)) {
+				String interf = this.rmeTunnelIpInterfaceList.get(ANAddress);
+				System.out.println("Trying to connect to " + ANAddress + " from RMEList");
+				updateMsg("Trying to create tunnels toward "+ ANAddress);
+				if (SipSignalManager.getVipaForAN(ANAddress) != null) {
+					for (String ifName : availableIfs.keySet()) {
+						if(this.tunnelManager.getTid(ifName,  ANAddress)==TID_DROP && this.olsrDetectedEndPoint.contains(ANAddress)) {
+							if(crossTunnel && routingCheck.isCrossTunnelAvailable(ANAddress, ifName)) {
+								if(!tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+ANAddress)) {
+//									System.err.println("--------------------------------------");
+//									System.err.println("chiamata da tryreconnection11111111");
+//									System.err.println("--------------------------------------");
+									long tunSet = tunnelSetup(ifName, ANAddress, associatedANList.get(ANAddress));
+									int localTID = tunnelManager.getTid(ifName, ANAddress);
+									String VIPA = this.getVipa(ANAddress);
+									if(localTID!=TID_DROP) {
+										this.addRMETunnelToTunnelList(VIPA, ifName, ANAddress, localTID);
+										checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+									}
+									if(!textMode) {
+										((GUIApplicationManager)getGui()).refreshGui();
+									}
+								}
 
-		for (String interf : availableIfsCopy) {
-			if(associatedANList.size() < maxANNumber){
-				System.out.println("Trying to connect to " + ANAddress + " from ANList");
-				if(addANonIf(ANAddress, interf, true)){
-					//#ifndef ANDROID
-					updateMsg("Trying to create tunnels toward "+ ANAddress);
-					//#endif
-					createAllTunnelsToAN(ANAddress, associatedANList.get(ANAddress));
-					return true;
-				}					
-			}
-			else
+							}
+							else {
+								if(rmeDirectTunnel.contains(ANAddress+":"+ifName)){
+//									System.err.println("--------------------------------------");
+//									System.err.println("chiamata da tryreconnection2222222222");
+//									System.err.println("--------------------------------------");
+									long tunSet = tunnelSetup(ifName, ANAddress, associatedANList.get(ANAddress));
+									int localTID = tunnelManager.getTid(ifName, ANAddress);
+									String VIPA = this.getVipa(ANAddress);
+									if(localTID!=TID_DROP) {
+										this.addRMETunnelToTunnelList(VIPA, ifName, ANAddress, localTID);
+										checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+									}
+									if(!textMode) {
+										((GUIApplicationManager)getGui()).refreshGui();
+									}
+								}
+							}
+						}
+
+					}
+				}
+				else {
+					for (String ifName : availableIfs.keySet()) {
+						if(!blockerAssociation) {
+							if(!signaler.getCurrentAssociations().contains(ANAddress+":"+ifName)) {
+								rmeAnAssociation(ANAddress, interf);
+								if (SipSignalManager.getVipaForAN(ANAddress) != null) {
+									break;
+								}
+							}
+						}
+						else {
+							rmeAnAssociation(ANAddress, interf);
+						}
+					}
+
+				}
 				return true;
+			}
 		}
-
+		else {
+			for (String interf : availableIfsCopy) {
+				if(associatedANList.size() < maxANNumber){
+					System.out.println("Trying to connect to " + ANAddress + " from ANList");
+					if(addANonIf(ANAddress, interf, true)){
+						//#ifndef ANDROID
+						updateMsg("Trying to create tunnels toward "+ ANAddress);
+						//#endif
+						createAllTunnelsToAN(ANAddress, associatedANList.get(ANAddress));
+						return true;
+					}					
+				}
+				else
+					return true;
+			}
+		}
+		//		}
 		return false;
 
 	}
@@ -1545,14 +2090,15 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		return ANtoSipPort.get(AN);
 	}
 
+	public void setANSipPort(String an, Integer port) {
+		if(!ANtoSipPort.containsKey(an))
+			ANtoSipPort.put(an, port);
+	}
+
 	public static boolean getRME() {
 		return rme;
 	}
 
-	public static String getRMEConfig() {
-		return rmeConfig;
-	}
-	
 	public static ArrayList<String> getRMEInterfacesList() {
 		return rmeInterfacesList;
 	}
@@ -1563,10 +2109,1168 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 		}
 	}
 
+	public static HashMap<String, SipProvider> getSignalers() {
+		return signalers;
+	}
+
+	public static ArrayList<RMEServer> getServers() {
+		return servers;
+	}
+
+	public static void setSignalers(HashMap<String, SipProvider> signalers) {
+		UPMTClient.signalers = signalers;
+	}
+
+	public static void setServers(ArrayList<RMEServer> servers) {
+		UPMTClient.servers = servers;
+	}
+
 	//#ifdef ANDROID
 	//		public static Context getContext()
 	//		{
 	//			return context;
 	//		}
 	//#endif
+
+	public void rmeAnAssociation(final String anAddress, final String ifNameDest) {
+		if(blockerAssociation) {
+			new Thread(new Runnable() {
+				@Override
+				public void run() {
+					// TODO Auto-generated method stub
+					if(!UPMTClient.associatedANList.contains(anAddress) && SipSignalManager.getVipaForAN(anAddress)==null && olsrDetectedEndPoint.contains(anAddress)){
+						//						synchronized(availableIfs) {
+						//							synchronized (signaler.getCurrentAssociations()) {
+						if(!signaler.getCurrentAssociations().contains(anAddress+":"+ifNameDest)) {
+							signaler.getCurrentAssociations().add(anAddress+":"+ifNameDest);
+							if(!addANonIf(anAddress, ifNameDest, blockerAssociation)) {
+								rmeAnAssociation(anAddress, ifNameDest);
+							}
+						}
+						//							}
+						//						}
+					}
+				}
+			}, "RME Association Thread").start();
+		}
+		else {
+			if(!UPMTClient.associatedANList.contains(anAddress) && SipSignalManager.getVipaForAN(anAddress)==null && olsrDetectedEndPoint.contains(anAddress)){
+				//				synchronized(availableIfs) {
+				if(!addANonIf(anAddress, ifNameDest, blockerAssociation)) {
+					if(!signaler.getCurrentAssociations().contains(anAddress+":"+ifNameDest)) {
+						rmeAnAssociation(anAddress, ifNameDest);
+					}
+				}
+				//				}
+			}
+		}
+	}
+
+	public void setRoutingPeerModeFromAssociation(String destination, String ifname) {
+		if(this.routingCheck.getAddressIfnameTogateway().containsKey(destination+":"+ifname)) {
+			String gateway = this.routingCheck.getAddressIfnameTogateway().get(destination+":"+ifname);
+			this.routingCheck.setPeerMode(destination, ifname, gateway);
+		}
+	}
+
+	public void createRmeSingleTunnel(final String anAddress, final String ifNameDest) {
+
+		new Thread(new Runnable() {
+
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				updateMsg("Trying to create tunnels toward "+ anAddress);
+				if (SipSignalManager.getVipaForAN(anAddress) != null && olsrDetectedEndPoint.contains(anAddress)) {
+					if(tunnelManager.getTid(ifNameDest, anAddress)==TID_DROP && routingCheck.isCrossTunnelAvailable(anAddress, ifNameDest)) {
+						if(!tunnelManager.getTemporaryTunnelSetup().contains(ifNameDest+":"+anAddress)) {
+//							System.err.println("--------------------------------------");
+//							System.err.println("chiamata da creatermesingletunnel");
+//							System.err.println("--------------------------------------");
+							long tunSet = tunnelSetup(ifNameDest, anAddress, associatedANList.get(anAddress));
+							int localTID = tunnelManager.getTid(ifNameDest, anAddress);
+							String VIPA = getVipa(anAddress);
+
+							if(localTID!=TID_DROP) {
+								addRMETunnelToTunnelList(VIPA, ifNameDest, anAddress, localTID);
+								checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+							}		
+						}
+					}
+				}
+				if(!textMode) {
+					((GUIApplicationManager)appManager).refreshGui();
+				}
+
+			}
+		}).start();
+		signaler.startKeepALiveThread();
+	}
+
+
+	public void createRmeTunnels(final String anAddress, final String ifNameDest) {
+		new Thread(new Runnable() {
+
+			@Override
+			public void run() {
+				// TODO Auto-generated method stub
+				updateMsg("Trying to create tunnels toward "+ anAddress);
+				if (SipSignalManager.getVipaForAN(anAddress) != null && olsrDetectedEndPoint.contains(anAddress)) {
+					//					synchronized(availableIfs) {
+					for (String ifName : availableIfs.filterOnSignalingOK(anAddress).keySet()) {
+						if(ifName.equals(ifNameDest)) {
+							if(tunnelManager.getTid(ifNameDest, anAddress)==TID_DROP) {
+								if(crossTunnel && routingCheck.isCrossTunnelAvailable(anAddress, ifName)) {
+									if(!tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+anAddress)) {
+										rmeTunnelIpInterfaceList.put(anAddress, ifName);
+//										System.err.println("--------------------------------------");
+//										System.err.println("chiamata da creatermetunnels11111");
+//										System.err.println("--------------------------------------");
+										long tunSet = tunnelSetup(ifName, anAddress, associatedANList.get(anAddress));
+										int localTID = tunnelManager.getTid(ifName, anAddress);
+										String VIPA = getVipa(anAddress);
+										if(localTID!=TID_DROP) {
+											addRMETunnelToTunnelList(VIPA, ifName, anAddress, localTID);
+											checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+										}
+									}
+								}
+								else {
+									if(rmeDirectTunnel.contains(anAddress+":"+ifName)) {
+										if(!tunnelManager.getTemporaryTunnelSetup().contains(ifName+":"+anAddress)) {
+											rmeTunnelIpInterfaceList.put(anAddress, ifName);
+//											System.err.println("--------------------------------------");
+//											System.err.println("chiamata da creatermetunnels222222");
+//											System.err.println("--------------------------------------");
+											long tunSet = tunnelSetup(ifName, anAddress, associatedANList.get(anAddress));
+											int localTID = tunnelManager.getTid(ifName, anAddress);
+											String VIPA = getVipa(anAddress);
+											if(localTID!=TID_DROP) {
+												addRMETunnelToTunnelList(VIPA, ifName, anAddress, localTID);
+												checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+											}
+										}
+									}
+								}
+							}
+						}
+					}
+					//					}
+				}
+				if(!textMode) {
+					((GUIApplicationManager)appManager).refreshGui();
+				}
+
+			}
+		}).start();
+		signaler.startKeepALiveThread();
+
+	}
+
+
+	//old version
+	//	public void rmeAnAssociation(String anAddress, String ifNameDest) {
+	////		while(!associatedANList.containsKey(anAddress)){
+	//			synchronized(availableIfs) {
+	//				if(addANonIf(anAddress, ifNameDest, true)) {
+	//					updateMsg("Trying to create tunnels toward "+ anAddress);
+	//					if (SipSignalManager.getVipaForAN(anAddress) != null) {
+	//						synchronized(availableIfs) {
+	//							for (String ifName : availableIfs.filterOnSignalingOK(anAddress).keySet()) {
+	//								if(ifName.equals(ifNameDest)) {
+	//									rmedirectunnel.put(anAddress, ifName);
+	//									long tunSet = tunnelSetup(ifName, anAddress, associatedANList.get(anAddress));
+	//									int localTID = tunnelManager.getTid(ifName, anAddress);
+	//									String VIPA = this.getVipa(anAddress);
+	//									if(firstTunnel && tunSet!=0 && localTID!=TID_DROP) {
+	////										appMonitor.setDefault(localTID);
+	////										setDefaultAN(anAddress);
+	//										System.err.println("localtid: "+localTID);
+	//										firstTunnel = false;
+	//									}
+	//									if(localTID!=TID_DROP) {
+	//										this.addRMETunnelToTunnelList(VIPA, ifName, anAddress, localTID);
+	//										checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UP);
+	//									}
+	//								}
+	//							}
+	//						}
+	//					}
+	//					((GUIApplicationManager)appManager).refreshGui();
+	//					signaler.startKeepALiveThread();
+	//					
+	//				}
+	//				else {
+	//					rmeAnAssociation(anAddress, ifNameDest);
+	//				}
+	//			}
+	////		}
+	//	}
+
+	public void rmeAnAssociation(String anAddress) {
+		//		while(!associatedANList.containsKey(anAddress)){
+		//			synchronized(availableIfs) {
+		for (String interf : availableIfs.keySet()) {
+			if(addANonIf(anAddress, interf, true)) {
+				createAllTunnelsToAN(anAddress, associatedANList.get(anAddress));
+				signaler.startKeepALiveThread();
+				break;
+			}
+		}
+		//			}
+		//		}
+	}
+
+	public String getVipa(String anAddress) {
+		if(UPMTClient.ipToVipa.containsKey(anAddress)) {
+			return UPMTClient.ipToVipa.get(anAddress);
+		}
+		return null;
+	}
+
+	// old version using netconf.json
+	//	public String getVipa(String anAddress) {
+	//		
+	//		for(String VIPA: this.routingCheck.getParse().getJmap().keySet()) {
+	//			for(int i=0; i<this.routingCheck.getParse().getJmap().get(VIPA).size(); i++) {
+	//				if(this.routingCheck.getParse().getJmap().get(VIPA).get(i).getIp().trim().equals(anAddress.trim())) {
+	//					return VIPA;
+	//				}
+	//			}
+	//		}
+	//		return null;
+	//	}
+
+	public Hashtable<String, String> getRmeTunnelIpInterfaceList() {
+		return rmeTunnelIpInterfaceList;
+	}
+
+	public ArrayList<String> getRmeDirectTunnels() {
+		return rmeDirectTunnel;
+	}
+
+	public RoutingCheck getRoutingCheck() {
+		return this.routingCheck;
+	}
+
+	public ApplicationManager getApplicationManager() {
+		return this.appManager;
+	}
+
+	public Hashtable<Integer, SipProvider> getTunnelProviders() {
+		return tunnelProviders;
+	}
+
+	public void setTunnelProviders(Hashtable<Integer, SipProvider> tunnelProviders) {
+		this.tunnelProviders = tunnelProviders;
+	}
+
+	/**
+	 * for all applications listed in cfg files, it sets the policy into hashtable, register the application
+	 * to events (in the InterfPolicyFactory.getPolicy method) and adds the application to closedPolicy hash map
+	 * then it tells the appmonitor which tunnel to use for new connections
+	 */
+	private void putRMEPoliciesToHashtable() {
+
+		// salviamo le policy per applicazione trovate nel file cfg
+		for(String app: cfg.rmeApplicationPolicy.keySet()) {
+			rmeCfgPolicy.put(app, cfg.rmeApplicationPolicy.get(app));
+			rmeClosedPolicy.put(app, cfg.rmeApplicationPolicy.get(app).get(0));
+			for(int event: rmeEventRegister.keySet()) {
+				rmeEventRegister.get(event).add(app);
+			}
+		}
+	}
+
+	/**
+	 * evaluates all the policies following a given event, to check if it is needed to change the
+	 * tunnel for an application
+	 */
+	public void checkAllRMEPolicy(String VIPA, int event) {
+		if (signalingPolicy.isTriggeredBy(event)) { 
+			String newInterf = signalingPolicy.getActiveInterf(availableIfs.filterOnSignalingOK(defaultAN), signalingInterface, event);
+
+			if (!( (newInterf==null&&signalingInterface==null) || (newInterf!=null && newInterf.equals(signalingInterface))    ) ) {
+				changeSignalingInterf(newInterf);
+			}
+		}
+
+
+		for (String appName : rmeEventRegister.get(event)) {
+			checkSingleRMEPolicy(VIPA, appName, event);
+		}
+
+		//		da cambiare anche nell interfaccia grafica----> mi raccomando quello vede un tante policy che devono scomparire per rme
+		//		appManager.onPolicyCheck();
+	}
+
+	/**
+	 * Applies the policy associated to an application when a given event has happened
+	 * @param appName
+	 * @param event the event that has happened
+	 *           (RME_EVENT_START / RME_EVENT_INTERFACE_UP / RME_EVENT_INTERFACE_DOWN / RME_EVENT_TUN_UP / RME_EVENT_TUN_DOWN )
+	 */
+	public void checkSingleRMEPolicy(String VIPA, String appName, int event) {
+
+		if (rmeOpenedPolicy.containsKey(appName)) { //APP OPENED (i.e. it has open sockets)
+			String policy = rmeOpenedPolicy.get(appName);
+			int newTid = TID_DROP;
+			if((policy.trim()).equalsIgnoreCase("bestTunnel")) { // dovremmo scegliere una politica per il momento bestTunnel
+				newTid = getBestTunnelForVipa(VIPA);
+			}
+			else {
+				newTid = getBestTunnelForVipa(VIPA);
+			}
+			int currentTid;
+			if(!rmeOpenedAppToTunnel.containsKey(appName)) {
+				rmeOpenedAppToTunnel.put(appName, new HashMap<String, Integer>());
+				rmeOpenedAppToTunnel.get(appName).put(VIPA, newTid);
+				currentTid = newTid;
+				appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+			}
+			else {
+				if(rmeOpenedAppToTunnel.get(appName).containsKey(VIPA)) {
+					currentTid = rmeOpenedAppToTunnel.get(appName).get(VIPA);
+				}
+				else {
+					rmeOpenedAppToTunnel.get(appName).put(VIPA, newTid);
+					currentTid = newTid;
+					appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+				}
+			}
+			if ((newTid==TID_DROP && currentTid==TID_DROP) || (newTid!=TID_DROP && newTid==currentTid)) return;
+			if (newTid!=TID_DROP) {
+				System.err.println("new tid diverso da ti to drop");
+				rmeOpenedAppToTunnel.get(appName).put(VIPA, newTid);
+			} else {
+				System.out.println("[UPMTClient]: No connection available to the VIPA "+VIPA);
+				rmeOpenedAppToTunnel.get(appName).put(VIPA, newTid);
+				//				rmeOpenedAppToTunnel.remove(appName);
+			}
+			appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+			moveAppToTunnelRME(appName, newTid, VIPA);
+		} else { //APP CLOSED (i.e. with no open sockets)
+			String policy = rmeClosedPolicy.get(appName);
+			int newTid;
+			if((policy.trim()).equalsIgnoreCase("bestTunnel")) { // dovremmo scegliere una politica per il momento bestTunnel
+				newTid = getBestTunnelForVipa(VIPA);
+			}
+			else {
+				newTid = getBestTunnelForVipa(VIPA);
+			}
+			int currentTid;
+			if(!rmeClosedAppToTunnel.containsKey(appName)) {
+				rmeClosedAppToTunnel.put(appName, new HashMap<String, Integer>());
+				rmeClosedAppToTunnel.get(appName).put(VIPA, newTid);
+				currentTid = newTid;
+				appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+			}
+			else {
+				if(rmeClosedAppToTunnel.get(appName).containsKey(VIPA)) {
+					currentTid = rmeClosedAppToTunnel.get(appName).get(VIPA);
+				}
+				else {
+					rmeClosedAppToTunnel.get(appName).put(VIPA, newTid);
+					currentTid = newTid;
+					appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+				}
+			}
+			if ((newTid==TID_DROP && currentTid==TID_DROP) || (newTid!=TID_DROP && newTid==currentTid)) return;
+			if (newTid!=TID_DROP) {
+				rmeClosedAppToTunnel.get(appName).put(VIPA, newTid);
+			} else {
+				System.err.println("[UPMTClient]: No connection available to the VIPA "+VIPA);
+				rmeClosedAppToTunnel.get(appName).put(VIPA, newTid);
+//				rmeClosedAppToTunnel.remove(appName);
+			}
+			appMonitor.rmeSetAppAndVIPA(appName, VIPA, newTid);
+		}
+		if(!textMode) {
+			((GUIApplicationManager)appManager).refreshGui();
+		}
+	}
+
+	/**
+	 * Adds a tunnel to the hashmap of tunnelLists by VIPA, interface-name and end-point-address
+	 * @param VIPA
+	 * @param ifName
+	 * @param endPointAddress
+	 */
+	public void addRMETunnelToTunnelList(String VIPA, String ifName, String endPointAddress) {
+		VipaTunnel vt = new VipaTunnel(VIPA, ifName, endPointAddress, tunnelManager.getTid(ifName, endPointAddress));
+		if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+			this.rmePerVipaTunnelList.get(VIPA).add(vt);
+		} else {
+			this.rmePerVipaTunnelList.put(VIPA, new ArrayList<VipaTunnel>());
+			this.rmePerVipaTunnelList.get(VIPA).add(vt);
+		}
+	}
+
+	/**
+	 * Adds a tunnel to the hashmap of tunnelLists by VIPA, interface-name, end-point-address and tunnel ID
+	 * @param VIPA
+	 * @param ifName
+	 * @param endPointAddress
+	 * @param tid
+	 */
+	public void addRMETunnelToTunnelList(String VIPA, String ifName, String endPointAddress, int tid) {
+		VipaTunnel vt = new VipaTunnel(VIPA, ifName, endPointAddress, tid);
+		if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+			this.rmePerVipaTunnelList.get(VIPA).add(vt);
+		} else {
+			this.rmePerVipaTunnelList.put(VIPA, new ArrayList<VipaTunnel>());
+			this.rmePerVipaTunnelList.get(VIPA).add(vt);
+		}
+	}
+
+	/**
+	 * Deletes a tunnel to the hashmap of tunnelLists by VIPA, interface-name and end-point-address
+	 * @param VIPA
+	 * @param ifName
+	 * @param endPointAddress
+	 */
+	public void delRMETunnelToTunnelList(String VIPA, String ifName, String endPointAddress) {
+		if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+			for(int i=0; i<this.rmePerVipaTunnelList.get(VIPA).size(); i++) {
+				if(this.rmePerVipaTunnelList.get(VIPA).get(i).getIfName().equals(ifName) 
+						&& this.rmePerVipaTunnelList.get(VIPA).get(i).getEndPointAddress().equals(endPointAddress)) {
+					this.rmePerVipaTunnelList.get(VIPA).remove(i);
+				}
+			}
+		}
+	}
+	
+	public void delRmePerVipaTunnelList(String VIPA, int tid) {
+		if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+			for(int i=0; i<this.rmePerVipaTunnelList.get(VIPA).size(); i++) {
+				if(this.rmePerVipaTunnelList.get(VIPA).get(i).getTid()==tid) {
+					this.rmePerVipaTunnelList.get(VIPA).remove(i);
+				}
+			}
+		}
+	}
+
+	/**
+	 * Deletes a tunnel to the hashmap of tunnelLists by VIPA, and tunnel ID
+	 * @param VIPA
+	 * @param ifname
+	 */
+	public void delRMETunnelToTunnelList(String VIPA, int tid) {
+		delRmePerVipaTunnelList(VIPA, tid);
+		delBestTunnelForVipa(VIPA, tid);
+		delRmePerVipaBestTunnelDDS(VIPA, tid);
+	}
+	
+	public String tryToDelRMETunnelToTunnelList(int tid, String ifName, String ANAddress) {
+		String VIPA = getVipa(ANAddress);
+		if(VIPA!=null) {
+			delRmePerVipaTunnelList(VIPA, tid);
+			delBestTunnelForVipa(VIPA, tid);
+			delRmePerVipaBestTunnelDDS(VIPA, tid);
+		}
+		return VIPA;
+	}
+	
+	/**
+	 * 
+	 * @param VIPA
+	 * @param tid
+	 */
+	public void delRmePerVipaBestTunnelDDS(String VIPA, int tid) {
+		if(this.rmePerVipaBestTunnelDDS.containsKey(VIPA)) {
+			if(this.rmePerVipaBestTunnelDDS.get(VIPA).getTid()==tid) {
+				this.rmePerVipaBestTunnelDDS.remove(VIPA);
+			}
+		}
+	}
+
+	public HashMap<String, ArrayList<VipaTunnel>> getRmePerVipaTunnelList() {
+		return this.rmePerVipaTunnelList;
+	}
+
+	public ArrayList<String> getOlsrDetectedEndPoint() {
+		return olsrDetectedEndPoint;
+	}
+
+	public void setOlsrDetectedEndPoint(ArrayList<String> olsrDetectedEndPoint) {
+		this.olsrDetectedEndPoint = olsrDetectedEndPoint;
+	}
+
+	private void moveAppToTunnelRME(String appName, int tid, String vepa) {
+
+		printLog("Tunnel handover for "+appName+" to tunnel with ID: "+tid, Log.LEVEL_HIGH);
+
+		synchronized(socketForApp) {
+			Vector<Socket> sockVect = socketForApp.get(appName);
+			if (sockVect==null) {
+				printLog("[UPMTClient.moveAppToInterf]: socketForApp.get( \"" +appName + "\" ) returns null!!",Log.LEVEL_HIGH );
+				return;
+			} else {			
+				for (Socket socket : socketForApp.get(appName)) {
+					moveSocketToTunnelRME(socket, tid, appName, vepa);
+				}
+			}
+		}
+	}
+
+	private void moveSocketToTunnelRME(Socket socket, int tid, String appName, String vepa) {
+		if(tid==TID_DROP) {
+//			printLog("[UPMT client.moveSocketToInterf]: iFName NULL!!!" ,Log.LEVEL_HIGH );
+			return;
+		}
+		if(vepa.equals(socket.dstIp)) {
+			tunnelManager.assignSocketToTunnelRME(socket.proto, socket.srcPort, socket.dstIp, socket.dstPort, tid);
+		}
+	}
+
+
+	/**
+	 * Chooses the best tunnel for a determinated VIPA
+	 * 
+	 * @param VIPA
+	 * @return the tid which refers to the best tunnel
+	 */
+	public int getBestTunnelForVipaOLD(String VIPA) {
+		if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+			if(this.rmePerVipaTunnelList.get(VIPA).size()!=0) {
+				// potrebbe creare problemi un rme la condizione prima dell'istruzione
+				if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaTunnelList.get(VIPA).get(0).getTid());
+
+				return this.rmePerVipaTunnelList.get(VIPA).get(0).getTid();
+			}
+		}
+		return TID_DROP;
+	}
+
+	/**
+	 * Chooses the best tunnel for a determinated VIPA
+	 * 
+	 * @param VIPA
+	 * @return the tid which refers to the best tunnel
+	 */
+	public int getBestTunnelForVipa(String VIPA) {
+		if(rmePerVipaBestTunnelDDS.containsKey(VIPA)){
+			if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaBestTunnelDDS.get(VIPA).getTid());
+			return this.rmePerVipaBestTunnelDDS.get(VIPA).getTid();
+		}else{
+			if(this.rmePerVipaBestTunnel.containsKey(VIPA)) {
+				if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaBestTunnel.get(VIPA).getTid());
+				return this.rmePerVipaBestTunnel.get(VIPA).getTid();
+			}
+			else if(this.rmePerVipaBestTunnelServer.containsKey(VIPA)) {
+				if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaBestTunnelServer.get(VIPA).getTid());
+				return this.rmePerVipaBestTunnelServer.get(VIPA).getTid();
+			}
+			else if(this.rmePerVipaTunnelList.containsKey(VIPA)) {
+				if(this.rmePerVipaTunnelList.get(VIPA).size()!=0) {
+					// potrebbe creare problemi un rme la condizione prima dell'istruzione				
+					if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaTunnelList.get(VIPA).get(0).getTid());
+					return this.rmePerVipaTunnelList.get(VIPA).get(0).getTid();
+				}
+			}
+		}
+		return TID_DROP;
+	}
+
+	/**
+	 * Chooses the best tunnel for a determinated VIPA
+	 * 
+	 * @param VIPA
+	 * @return the tid which refers to the best tunnel
+	 */
+	public void setBestTunnelForVipa(String ANAddress, TunnelInfo tInfo) {
+		String VIPA = getVipa(ANAddress);
+		if(ddsQoS.containsKey(VIPA) && DDSQoSReceiver) {
+			reallocationDDSTunnel(VIPA);
+		}else if(interfaceBalance){
+			setBestTunnelwithIntefaceBalance(VIPA);
+		}
+		else {
+			setBestTunnelWithBestDelay(VIPA);
+		}
+
+
+	}
+
+	/**
+	 * Chooses the best tunnel for a determinated VIPA
+	 * 
+	 * @param VIPA
+	 * @return the tid which refers to the best tunnel
+	 */
+	public void setBestTunnelForVipaServer(String ANAddress, RMETunnelInfo tInfo) {
+		String VIPA = getVipa(ANAddress);
+		if(tInfo.getKeepaliveNumber()>=2) {
+			if(ddsQoS.containsKey(VIPA) && DDSQoSReceiver) {
+				reallocationDDSTunnel(VIPA);
+			}else if(interfaceBalance){
+				setBestTunnelwithIntefaceBalance(VIPA);
+			}
+			else {
+				setBestTunnelWithBestDelay(VIPA);
+			}
+		}
+	}
+
+
+
+
+	public void delBestTunnelForVipa(String VIPA, int tid) {
+		if(this.rmePerVipaBestTunnel.containsKey(VIPA)) {
+			if(this.rmePerVipaBestTunnel.get(VIPA).getTid()==tid) {
+				this.rmePerVipaBestTunnel.remove(VIPA);
+			}
+		}
+		else if(this.rmePerVipaBestTunnelServer.containsKey(VIPA)) {
+			if(this.rmePerVipaBestTunnelServer.get(VIPA).getTid()==tid) {
+				this.rmePerVipaBestTunnelServer.remove(VIPA);
+			}
+		}
+	}
+
+	public HashMap<String, TunnelInfo> getRmePerVipaBestTunnel() {
+		return rmePerVipaBestTunnel;
+	}
+
+	public void setRmePerVipaBestTunnel(HashMap<String, TunnelInfo> rmePerVipaBestTunnel) {
+		this.rmePerVipaBestTunnel = rmePerVipaBestTunnel;
+	}
+
+	public ApplicationMonitor getAppMonitor() {
+		return this.appMonitor;
+	}
+
+	public static ArrayList<String> getRMETunnelsToGUI() {
+
+		ArrayList<String> tunnelToGui = new ArrayList<String>(RMETunnelsToGUI);
+
+		return tunnelToGui;
+	}
+
+	public static void addRMETunnelsToGUI(String endPointAddress) {
+		if(!RMETunnelsToGUI.contains(endPointAddress)) {
+			RMETunnelsToGUI.add(endPointAddress);
+		}
+	}
+
+	public static void delRMETunnelsToGUI(String endPointAddress) {
+		if(RMETunnelsToGUI.contains(endPointAddress)) {
+			RMETunnelsToGUI.remove(endPointAddress);
+		}
+	}
+
+
+	public static HashMap<String, RMETunnelInfo> getRMERemoteTidStatusTable() {
+		return RMEremoteTidStatusTable;
+
+	}
+
+	public static String getVipaUI(String anAddress) {
+
+		if(UPMTClient.ipToVipa.containsKey(anAddress)) {
+			return UPMTClient.ipToVipa.get(anAddress);
+		}		
+		return null;
+	}
+
+
+	// old version using netconf.json
+
+	//	public static String getVipaUI(String anAddress) {
+	//		
+	//		
+	//		
+	//		
+	//		ParseJson parse;
+	//		try {
+	//			parse = new ParseJson();
+	//			for(String VIPA: parse.getJmap().keySet()) {
+	//				for(int i=0; i<parse.getJmap().get(VIPA).size(); i++) {
+	//					if(parse.getJmap().get(VIPA).get(i).getIp().trim().equals(anAddress.trim())) {
+	//						return VIPA;
+	//					}
+	//				}
+	//			}
+	//		} catch (IOException e) {
+	//			// TODO Auto-generated catch block
+	//			e.printStackTrace();
+	//		} catch (JSONException e) {
+	//			// TODO Auto-generated catch block
+	//			e.printStackTrace();
+	//		}
+	//		
+	//		
+	//		return null;
+	//	}
+
+	public static String getVepa() {
+		return cfg.vepa;
+	}
+
+	public static void runOlsrd(String devName) {
+		for(int i=0; i<rmeAddresses.size(); i++) {
+			for(int j=0; j<cfg.olsrdConf.size(); j++) {
+				String[] splitted = cfg.olsrdConf.get(j).split("/");
+				String filename = splitted[(splitted.length)-1];
+				String ifConf = filename.substring(0, filename.length()-5);
+				if(rmeAddresses.get(i).getRmeInterface().equals(devName) && ifConf.equals(devName)) {
+					try {
+						Runtime.getRuntime().exec("sudo olsrd -f "+cfg.olsrdConf.get(j));
+					} catch (IOException e) {
+						e.printStackTrace();
+					}
+				}
+			}
+		}
+	}
+
+	public void addDiscoveredaddresses(String vepa, String[] addressesInUse) {
+		synchronized (this.rmeDiscoveredAddresses) {
+			if(!this.rmeDiscoveredAddresses.containsKey(vepa)) {
+				this.rmeDiscoveredAddresses.put(vepa, addressesInUse);
+				for(String address: addressesInUse) {
+					if(!UPMTClient.ipToVipa.containsKey(address)) {
+						UPMTClient.ipToVipa.put(address, vepa);
+					}
+				}
+			}
+		}
+	}
+
+	public void addSingleDiscoveredAddress(String vepa, String address) {
+		synchronized (this.rmeDiscoveredAddresses) {
+			if(!UPMTClient.ipToVipa.containsKey(address)) {
+				UPMTClient.ipToVipa.put(address, vepa);
+			}
+		}
+	}
+
+	public String[] getDiscoveredaddresses(String vepa) {
+		synchronized (this.rmeDiscoveredAddresses) {
+			if(this.rmeDiscoveredAddresses.containsKey(vepa)) {
+				return this.rmeDiscoveredAddresses.get(vepa);
+			}
+			else {
+				return null;
+			}
+		}
+	}
+	/**
+	 * Update the hash map for the DDS Qos and it do the reallocation
+	 * @param key
+	 * @param effectiveLatency
+	 * @author Pierluigi Greto
+	 */
+	public void updateDDSQos(String key, int effectiveLatency) {
+		String vipaKey = "";
+		if(key.contains(":")){
+			String[] array = key.split(":");
+			vipaKey = array[0];
+		}else {
+			vipaKey = key;
+		}
+
+		if(!ddsQoS.containsKey(vipaKey) || ddsQoS.get(vipaKey)!=effectiveLatency) {
+			ddsQoS.put(vipaKey, effectiveLatency);
+			reallocationDDSTunnel(vipaKey);
+		}
+
+
+	}
+
+	/**
+	 * @param VIPA
+	 * @return A list of all DDSQoSTunnelInfo (sorted by EWMA_delay) for the VIPA
+	 * @author Pierluigi Greto
+	 */
+	public ArrayList<DDSQoSTunnelInfo> getTunnelInfoDDSForVipa(String VIPA) {
+		ArrayList<DDSQoSTunnelInfo> tunnelInfoForDDS = new ArrayList<DDSQoSTunnelInfo>();
+		if(this.rmePerVipaTunnelList.containsKey(VIPA) && this.rmeDiscoveredAddresses.containsKey(VIPA)) {
+			for(String address: this.rmeDiscoveredAddresses.get(VIPA)) {
+				for(String ifname: availableIfs.keySet()) {
+					if(SipSignalManager.getRemoteTidStatusTable().containsKey(address+":"+ifname)) {
+						TunnelInfo tunnelInfo = SipSignalManager.getRemoteTidStatusTable().get(address+":"+ifname);
+						if(tunnelInfo.getStatus() == TunnelInfo.TUNNEL_SETUP){
+							DDSQoSTunnelInfo ddsQoSTunnelInfo= new DDSQoSTunnelInfo(tunnelInfo.getTid(), tunnelInfo.getEWMA_Delay(), false, 0);
+							tunnelInfoForDDS.add(ddsQoSTunnelInfo);
+						}
+					}
+					else if(RMEremoteTidStatusTable.containsKey(address+":"+ifname)) {
+						RMETunnelInfo tunnelInfo = RMEremoteTidStatusTable.get(address+":"+ifname);
+						if(tunnelInfo.getStatus() == TunnelInfo.TUNNEL_SETUP){
+							DDSQoSTunnelInfo ddsQoSTunnelInfo= new DDSQoSTunnelInfo(tunnelInfo.getTid(), tunnelInfo.getEWMA_delay(), true, tunnelInfo.getKeepaliveNumber());
+							tunnelInfoForDDS.add(ddsQoSTunnelInfo);
+						}
+					}
+				}
+			}
+		}
+		Collections.sort(tunnelInfoForDDS, new Comparator<DDSQoSTunnelInfo>() {
+			@Override
+			public int compare(DDSQoSTunnelInfo arg0, DDSQoSTunnelInfo arg1) {
+				return new Double(arg0.getEwma_delay()).compareTo(new Double(arg1.getEwma_delay()));
+
+			}
+		});
+		return tunnelInfoForDDS;
+	}
+	/**
+	 * 
+	 * @return A HashTable with a list of DDSQoSTunnelInfo for any VIPA with a QoS value
+	 * @author Pierluigi Greto
+	 */
+	public HashMap<String, ArrayList<DDSQoSTunnelInfo>> getForAllVipaDDSQoDTunnelInfo(){
+		HashMap<String, ArrayList<DDSQoSTunnelInfo>> DDSQoDTunnelInfoForAllVipa = new HashMap<String, ArrayList<DDSQoSTunnelInfo>>();
+		for(String VIPA :this.rmePerVipaTunnelList.keySet()){
+			ArrayList<DDSQoSTunnelInfo> tunnelInfoDDSForVipa = getTunnelInfoDDSForVipa(VIPA);
+			if(tunnelInfoDDSForVipa.size()!=0){
+				DDSQoDTunnelInfoForAllVipa.put(VIPA, tunnelInfoDDSForVipa);
+			}
+		}
+		return DDSQoDTunnelInfoForAllVipa;
+	}
+
+
+	/**
+	 *  Reallocation of bestTunnel for all VIPA
+	 * @param VIPA
+	 * @author Pierluigi Greto
+	 */
+	public void reallocationDDSTunnel(String VIPA){
+		if(DDSQoSReceiver && this.rmePerVipaTunnelList.containsKey(VIPA) ){
+			HashMap<String, ArrayList<DDSQoSTunnelInfo>> DDSQoDTunnelInfoForAllVipa = getForAllVipaDDSQoDTunnelInfo();
+			decisionEngine(DDSQoDTunnelInfoForAllVipa);
+		}
+	}
+
+	/**
+	 * Set for the Vipa the bestTunnel tunnelInfoForDDS
+	 * @param VIPA
+	 * @param tunnelInfoForDDS
+	 * @author Pierluigi Greto
+	 */
+	public void setDDSQoSBestTunnel(String VIPA, DDSQoSTunnelInfo tunnelInfoForDDS) {
+		if( (!tunnelInfoForDDS.isServer()) || (tunnelInfoForDDS.isServer() && tunnelInfoForDDS.getNumberKeepAlive()>=2) ) {
+			this.rmePerVipaBestTunnelDDS.put(VIPA, tunnelInfoForDDS);
+			printLog("New default Tunnel for "+VIPA+" with Tunnel ID "+this.rmePerVipaBestTunnelDDS.get(VIPA).getTid(), Log.LEVEL_MEDIUM);
+			//aggiornamento interfaccia grafica
+			if (!coreEmulator) ((GUIApplicationManager) this.appManager).setTunnelInUseForVipa(VIPA, this.rmePerVipaBestTunnelDDS.get(VIPA).getTid());
+			checkAllRMEPolicy(VIPA, RME_EVENT_TUN_UPDATE);
+		}
+	}
+
+	/**
+	 * Calculate and set the best tunnel. It use the Reallocation Priotity
+	 * @param DDSQoDTunnelInfoForAllVipa
+	 * @author Pierluigi Greto
+	 */
+	public void decisionEngine(HashMap<String, ArrayList<DDSQoSTunnelInfo>> DDSQoDTunnelInfoForAllVipa) {
+		ArrayList<VipaMeasures>	vipaMeasures = new ArrayList<VipaMeasures>();	
+		for(String VIPA : DDSQoDTunnelInfoForAllVipa.keySet()){
+			if(!this.rmePerVipaBestTunnelDDS.containsKey(VIPA)){
+				if(this.rmePerVipaBestTunnel.containsKey(VIPA)){
+					TunnelInfo tinfo = this.rmePerVipaBestTunnel.get(VIPA);
+					this.rmePerVipaBestTunnelDDS.put(VIPA, new DDSQoSTunnelInfo(tinfo.getTid(), tinfo.getEWMA_Delay(), false, 0));
+				} else if (this.rmePerVipaBestTunnelServer.containsKey(VIPA)){
+					RMETunnelInfo tinfo = this.rmePerVipaBestTunnelServer.get(VIPA);
+					this.rmePerVipaBestTunnelDDS.put(VIPA, new DDSQoSTunnelInfo(tinfo.getTid(), tinfo.getEWMA_delay(), true, tinfo.getKeepaliveNumber()));
+				} else {
+					this.setDDSQoSBestTunnel(VIPA, DDSQoDTunnelInfoForAllVipa.get(VIPA).get(0));
+				}
+			}
+			if(!ddsQoS.containsKey(VIPA)){
+				ddsQoS.put(VIPA, 0);
+			}
+			DDSQoSTunnelInfo tinfo = this.rmePerVipaBestTunnelDDS.get(VIPA);
+			double measuredSpread = tinfo.getEwma_delay() - ddsQoS.get(VIPA);
+			double potentialGain = tinfo.getEwma_delay() - DDSQoDTunnelInfoForAllVipa.get(VIPA).get(0).getEwma_delay();
+			double reallocationPriority = measuredSpread + potentialGain;
+			vipaMeasures.add(new VipaMeasures(VIPA, measuredSpread, potentialGain, reallocationPriority));
+		}
+
+		/* Order List potentialGain */
+		Collections.sort(vipaMeasures,Collections.reverseOrder(new Comparator<VipaMeasures>() {
+
+			@Override
+			public int compare(VipaMeasures arg0, VipaMeasures arg1) {
+				// TODO Auto-generated method stub
+				return new Double(arg0.getReallocationPriority()).compareTo(new Double(arg1.getReallocationPriority()));
+			}
+		}));
+
+		HashMap<String, ArrayList<DDSQoSTunnelInfo>> allVipaTunnelInfo = getForAllVipaDDSQoDTunnelInfo();
+		HashMap<String, Integer> numberOfTunnelAllocabiliForInterface = new HashMap<String, Integer>();
+		int R = allVipaTunnelInfo.size();
+		int M = availableIfs.size();
+		for(String nameinf :availableIfs.keySet()){
+			numberOfTunnelAllocabiliForInterface.put(nameinf, 0);
+		}		
+		for(VipaMeasures vm: vipaMeasures){
+			String vipa = vm.getVipa();
+			boolean setted = false;
+			for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+				String ifname = getInterfaceForVipa(vipa, ti.getTid());
+				if(ifname != null){
+					if(numberOfTunnelAllocabiliForInterface.get(ifname) < ((int)(R/M)) && ti.getEwma_delay() <= ddsQoS.get(vipa)){
+						setted = true;
+						int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+						numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+						if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid())){
+							this.setDDSQoSBestTunnel(vipa, ti);					
+						}
+						break;
+					}
+				}
+			}
+			if(!setted){
+				for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+					String ifname = getInterfaceForVipa(vipa, ti.getTid());
+					if(ifname != null){
+						if(numberOfTunnelAllocabiliForInterface.get(ifname) < (((int)(R/M))+1) && ti.getEwma_delay() <= ddsQoS.get(vipa) ){
+							setted = true;
+							int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+							numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+							if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid())){
+								this.setDDSQoSBestTunnel(vipa, ti);					
+							}
+							break;
+						}
+					}
+				}
+			}
+			if(!setted){
+				for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+					String ifname = getInterfaceForVipa(vipa, ti.getTid());
+					if(ifname != null){
+						setted = true;
+						int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+						numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+						if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || ((this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid()))){
+							this.setDDSQoSBestTunnel(vipa, ti);					
+						}
+						break;
+					}
+				}
+			}
+		}
+
+	}
+
+
+	/**
+	 * Set the best tunnel balancing the interface without the QoS
+	 * @param Vipa
+	 * @author Pierluigi Greto
+	 */
+	public void setBestTunnelwithIntefaceBalance(String Vipa){
+		if(Vipa!=null){
+			HashMap<String, ArrayList<DDSQoSTunnelInfo>> allVipaTunnelInfo = getForAllVipaDDSQoDTunnelInfo();
+			HashMap<String, Integer> numberOfTunnelAllocabiliForInterface = new HashMap<String, Integer>();
+			int R = allVipaTunnelInfo.size();
+			int M = availableIfs.size();
+			for(String nameinf :availableIfs.keySet()){
+				numberOfTunnelAllocabiliForInterface.put(nameinf, 0);
+			}
+			for(String vipa: allVipaTunnelInfo.keySet()){
+				boolean setted = false;
+				for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+					String ifname = getInterfaceForVipa(vipa, ti.getTid());
+					if(ifname != null){
+						if(numberOfTunnelAllocabiliForInterface.get(ifname) < ((int)(R/M)) ){
+							setted = true;
+							int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+							numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+							if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid())){
+								this.setDDSQoSBestTunnel(vipa, ti);					
+							}
+							break;
+						}
+					}
+				}
+				if(!setted){
+					for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+						String ifname = getInterfaceForVipa(vipa, ti.getTid());
+						if(ifname != null){
+							if(numberOfTunnelAllocabiliForInterface.get(ifname) < (((int)(R/M))+1) ){
+								setted = true;
+								int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+								numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+								if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid())){
+									this.setDDSQoSBestTunnel(vipa, ti);					
+								}
+								break;
+							}
+						}
+					}
+				}
+				if(!setted){
+					for(DDSQoSTunnelInfo ti: allVipaTunnelInfo.get(vipa)){
+						String ifname = getInterfaceForVipa(vipa, ti.getTid());
+						if(ifname != null){
+							setted = true;
+							int tunnel = numberOfTunnelAllocabiliForInterface.get(ifname)+1;
+							numberOfTunnelAllocabiliForInterface.put(ifname, tunnel);
+							if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti.getTid())){
+								this.setDDSQoSBestTunnel(vipa, ti);					
+							}
+							break;
+						}
+					}
+				}
+
+			}
+		}
+	}
+
+	/**
+	 * Return the interface name of the tunnel tid
+	 * @param vipa
+	 * @param tid
+	 * @return 
+	 * @author Pierluigi Greto
+	 */
+	private String getInterfaceForVipa(String vipa, int tid) {
+		for(String address: this.rmeDiscoveredAddresses.get(vipa)) {
+			for(String ifname: availableIfs.keySet()) {
+				if(SipSignalManager.getRemoteTidStatusTable().containsKey(address+":"+ifname)) {
+					TunnelInfo tunnelInfo = SipSignalManager.getRemoteTidStatusTable().get(address+":"+ifname);
+					if(tunnelInfo!=null ){
+						if(tunnelInfo.getTid()==tid){
+							return ifname;
+						}						
+					}
+				}
+				else if(RMEremoteTidStatusTable.containsKey(address+":"+ifname)) {
+					RMETunnelInfo tunnelInfo = RMEremoteTidStatusTable.get(address+":"+ifname);
+					if(tunnelInfo!=null ){
+						if(tunnelInfo.getTid()==tid){
+							return ifname;
+						}						
+					}
+				}
+			}
+		}
+		return null;
+	}
+
+	/**
+	 * Return a hashMap with all interface, and for all interface the number of Best tunnel
+	 * @return
+	 * @author Pierluigi Greto
+	 */
+	public HashMap<String, Integer> getInterfaceNumberOfBestTunnel(){
+		HashMap<String, Integer> interfaceNumberOfBestTunnel = new HashMap<String, Integer>();		
+		for(String VIPA :this.rmePerVipaTunnelList.keySet()){
+			if(this.rmeDiscoveredAddresses.containsKey(VIPA)){
+				for(String address: this.rmeDiscoveredAddresses.get(VIPA)) {
+					for(String ifname: availableIfs.keySet()) {
+						if(!interfaceNumberOfBestTunnel.containsKey(ifname)){
+							interfaceNumberOfBestTunnel.put(ifname, 0);
+						}
+						if(SipSignalManager.getRemoteTidStatusTable().containsKey(address+":"+ifname)) {
+							TunnelInfo tunnelInfo = SipSignalManager.getRemoteTidStatusTable().get(address+":"+ifname);
+							int bestTid = TID_DROP;
+							if(!coreEmulator) bestTid =	((GUIApplicationManager) this.appManager).tunnelInUseForVipa.get(VIPA);
+							if(tunnelInfo!=null && tunnelInfo.getStatus()==TunnelInfo.TUNNEL_SETUP ){
+								int localTID = TunnelManager.getTidTable().get(ifname+":"+address);
+								if(bestTid==localTID){
+									int number =interfaceNumberOfBestTunnel.get(ifname);
+									number++;
+									interfaceNumberOfBestTunnel.put(ifname, number);
+								}
+							}
+						}
+						else if(RMEremoteTidStatusTable.containsKey(address+":"+ifname)) {
+							RMETunnelInfo tunnelInfo = RMEremoteTidStatusTable.get(address+":"+ifname);
+							int bestTid = TID_DROP;
+							if(!coreEmulator) bestTid =	((GUIApplicationManager) this.appManager).tunnelInUseForVipa.get(VIPA);
+							if(tunnelInfo!=null &&  tunnelInfo.getStatus()==RMETunnelInfo.TUNNEL_SETUP){
+								int localTID = tunnelInfo.getServerTunnelID();
+								if(bestTid==localTID){
+									int number =interfaceNumberOfBestTunnel.get(ifname);
+									number++;
+									interfaceNumberOfBestTunnel.put(ifname, number);
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+		return interfaceNumberOfBestTunnel;
+	}
+
+
+	private void setBestTunnelWithBestDelay(String Vipa) {
+		if(Vipa != null){
+			HashMap<String, ArrayList<DDSQoSTunnelInfo>> allVipaTunnelInfo = getForAllVipaDDSQoDTunnelInfo();
+			for(String vipa: allVipaTunnelInfo.keySet()){
+				DDSQoSTunnelInfo ti = allVipaTunnelInfo.get(vipa).get(0);
+				if(ti!=null){
+					if(!this.rmePerVipaBestTunnelDDS.containsKey(vipa) || (this.rmePerVipaBestTunnelDDS.get(vipa).getTid() != ti .getTid())) {
+						this.setDDSQoSBestTunnel(vipa, ti);					
+					}
+				}
+			}
+		}
+	}
+
+	public void handleDelTun(int tid, String ifname, String remoteIP) {
+		if(cfgANList.contains(remoteIP)) { //client
+			signaler.removeTunnel(tid, ifname, remoteIP);
+		}
+		else { //server
+			for(RMEServer server: servers) {
+				if(server.getServerName().equals(ifname)) {
+					server.handleDelTunnel(tid, ifname, remoteIP);
+				}
+			}
+		}
+		if(!textMode) {
+			((GUIApplicationManager)appManager).refreshGui();
+		}
+	}
+
+	public void handleInfoTunnel(int tid, String ifname, String remoteIP, int delay, int loss, int ewmadelay, int ewmaloss) {
+		//String toPrint = "["+ System.currentTimeMillis() +"] "+"delay: "+delay + " loss: "+loss;
+		//toPrint = "echo '" + System.currentTimeMillis() + "," + delay + "," + loss + "'" + " >> /home/upmt/Desktop/kp_measure.dat";
+		//System.out.println(toPrint);
+		//try {
+		//	Runtime.getRuntime().exec(toPrint);
+		//} catch (IOException e) {
+			// TODO Auto-generated catch block
+		//	e.printStackTrace();
+		//}
+		printMeasure(System.currentTimeMillis(), delay, loss);
+		if(cfgANList.contains(remoteIP)) { //client			
+			signaler.infoTunnel(remoteIP, ifname, delay, loss);
+		}
+		else { //server
+			for(RMEServer server: servers) {
+				if(server.getServerName().equals(ifname)) {
+					server.handleInfoTunnel(tid, ifname, remoteIP, delay, loss, 0, 0);
+				}
+			}
+		}
+		if(!textMode) {
+			((GUIApplicationManager)appManager).refreshGui();
+		}
+	}
+
+	public void printMeasure(long millis, int delay, int loss) {
+		try {
+			String content = System.currentTimeMillis() + "," + delay + "," + loss + "\n";
+			File file = new File("/home/upmt/Desktop/kp_measure.dat");
+			//if(!file.exists()){
+			//	file.createNewFile();
+			//}
+			FileWriter fw = new FileWriter(file.getAbsoluteFile(), true);
+			BufferedWriter bw = new BufferedWriter(fw);
+			bw.write(content);
+			bw.close();
+		} catch(IOException e) {
+			e.printStackTrace();
+		}
+	}
+
 }

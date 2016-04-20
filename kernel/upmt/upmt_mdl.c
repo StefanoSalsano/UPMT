@@ -6,6 +6,7 @@
  */
 
 #include "include/upmt_mdl.h"
+#include "include/upmt_util.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -37,7 +38,7 @@ struct mdl_entry * mdl_insert(char *iname){
 
 	tmp = (struct mdl_entry *) kzalloc(sizeof(struct mdl_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("mdl_insert - Error - Unable to allocating memory for new_entry");
+		dmesge("mdl_insert - Unable to allocating memory for new_entry");
 		return NULL;
 	}
 	memcpy(tmp->md.iname, iname, strlen(iname));
@@ -81,7 +82,7 @@ void mdl_fill_pointers(struct mark_dev **data){
 int mdl_create(void){
 	mdl = (struct mdl_entry *) kzalloc(sizeof(struct mdl_entry), GFP_ATOMIC);
 	if(mdl == NULL){
-		printk("mdl_create - Error - Unable to allocating memory for mdl");
+		dmesge("mdl_create - Unable to allocating memory for mdl");
 		return -1;
 	}
 	INIT_LIST_HEAD(&mdl->list);

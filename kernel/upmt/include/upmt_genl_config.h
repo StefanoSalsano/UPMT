@@ -8,7 +8,8 @@
 #ifndef UPMT_GENL_CONFIG_H_
 #define UPMT_GENL_CONFIG_H_
 
-#define UPMT_GNL_FAMILY_NAME "UPMT_FAMILY"
+// Family name is shortened to enable concatenation with the hostname and support for namespaces (Sander)
+#define UPMT_GNL_FAMILY_NAME "UC_"
 #define UPMT_GNL_FAMILY_VERSION 1
 
 /* attributes */
@@ -35,6 +36,10 @@ enum UPMT_GNL_ATTRIBUTES{
 	UPMT_A_VERBOSE,
 	
 	UPMT_A_IP_ADDR,
+
+	UPMT_A_KEEP_STATE,
+	UPMT_A_KEEP_PERIOD,
+	UPMT_A_KEEP_TIMEOUT,
 
 	UPMT_A_LAST_LST_MSG,
 
@@ -77,6 +82,8 @@ enum UPMT_GNL_COMMANDS{
 	UPMT_C_SET_PDFT,
 	UPMT_C_DEL_PDFT,
 	UPMT_C_LST_PDFT,
+
+	UPMT_C_SET_KEEP,
 
 	__UPMT_C_MAX,
 };

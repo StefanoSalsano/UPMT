@@ -9,6 +9,7 @@
 #include "include/upmt_paft.h"
 #include "include/upmt_util.h"
 #include "include/upmt_stamp.h"
+#include "include/upmt_ka.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -24,7 +25,7 @@ struct tunt_entry * tunt_set_default(struct tun_param *tp){
 	tp->tid = 0;
 	if(default_tunnel == NULL) default_tunnel = (struct tunt_entry *) kzalloc(sizeof(struct tunt_entry), GFP_ATOMIC);
 	if(default_tunnel == NULL){
-		printk("\n error - tunt_set_default - unable to alloc memory");
+		dmesge("tunt_set_default - unable to alloc memory");
 		return NULL;
 	}
 	tun_param_copy(&default_tunnel->tp, tp);
@@ -45,15 +46,15 @@ int is_same_tun(const struct tun_param *a, const struct tun_param *b){
 	return 0;
 
 	/*int res;
-	printk("\n\n ------------------------------------ ");
+	dmesg("------------------------------------ ");
 	print_upmt_tun_param(a);
 	print_upmt_tun_param(b);
 
 	res = memcmp(&a->tl, &b->tl, (sizeof(struct tun_local)));
-	printk("\n\t ---> RES1: %d ", res);
+	dmesg(" ---> RES1: %d ", res);
 
 	res = memcmp(&a->tr, &b->tr, (sizeof(struct tun_remote)));
-	printk("\n\t ---> RES2: %d ", res);
+	dmesg(" ---> RES2: %d ", res);
 
 	if(memcmp(&a->tl, &b->tl, (sizeof(struct tun_local))) != 0) return 1;
 	return memcmp(&a->tr, &b->tr, (sizeof(struct tun_remote)));*/
@@ -84,6 +85,13 @@ static u32 tunt_hash_from_key(const struct tun_local *l){
 	return hash;
 }
 
+static void init_keepAlive_struct(struct keep_alive *p){
+	memset(p, 0, sizeof(struct keep_alive));
+	p->state = KEEP_ALIVE_OFF;
+	p->tstamp_recv = getMSecJiffies();
+	p->toSend = 0;
+}
+
 static struct tunt_entry * tunt_insert_entry(const struct tun_param *tp){
 	int tid;
 	struct tunt_entry *tmp;
@@ -92,7 +100,7 @@ static struct tunt_entry * tunt_insert_entry(const struct tun_param *tp){
 	if(tunt->table[hash] == NULL){
 		tunt->table[hash] = (struct tunt_entry *) kzalloc(sizeof(struct tunt_entry), GFP_ATOMIC);
 		if(tunt->table[hash] == NULL){
-			printk("tunt_insert - Error - Unable to allocating memory for first new_entry");
+			dmesge("tunt_insert - Unable to allocating memory for first new_entry");
 			return NULL;
 		}
 		INIT_LIST_HEAD(&tunt->table[hash]->list);
@@ -102,6 +110,7 @@ static struct tunt_entry * tunt_insert_entry(const struct tun_param *tp){
 		if(is_same_tun(tp, &tmp->tp) == 0){
 			tid = tmp->tp.tid;
 			tun_param_copy(&tmp->tp, tp);
+			init_keepAlive_struct(&tmp->kp);
 			tmp->tp.tid = tid;
 			if(tp->tid != tid) tunt->tid_trace[tp->tid] = 0;
 			tunt->overrides++;
@@ -111,10 +120,13 @@ static struct tunt_entry * tunt_insert_entry(const struct tun_param *tp){
 
 	tmp = (struct tunt_entry *) kzalloc(sizeof(struct tunt_entry), GFP_ATOMIC);
 	if(tmp == NULL){
-		printk("tunt_insert - Error - Unable to allocating memory for new_entry");
+		dmesge("tunt_insert - Unable to allocating memory for new_entry");
 		return NULL;
 	}
 	tun_param_copy(&tmp->tp, tp);
+
+	init_keepAlive_struct(&tmp->kp);
+
 	list_add(&tmp->list, &tunt->table[hash]->list);
 	//tunt->collisions++;
 	return tmp;
@@ -148,6 +160,25 @@ struct tunt_entry * tunt_search_by_tid(const int tid){
 		if(tunt->table[i] == NULL) continue;
 		list_for_each_entry(tmp, &tunt->table[i]->list, list){
 			if(tmp->tp.tid == tid) return tmp;
+		}
+	}
+	return NULL;
+}
+
+struct tunt_entry * tunt_set_ka_by_tid(const int tid, const int STATE){
+	struct tunt_entry *tmp;
+	u32 i;
+
+	for(i=0; i<tunt->dim; i++){
+		if(tunt->table[i] == NULL) continue;
+		list_for_each_entry(tmp, &tunt->table[i]->list, list){
+			if(tmp->tp.tid == tid){
+				tmp->kp.state = STATE;
+				if(STATE == KEEP_ALIVE_ON) tmp->kp.toSend = 1;
+				//tmp->kp.timestamp = getMSecJiffies();
+				//if(STATE == KEEP_ALIVE_ON) tmp->kp.mode = TUN_CLIENT_MODE;
+				return tmp;
+			}
 		}
 	}
 	return NULL;
@@ -264,7 +295,7 @@ int tunt_create(void){
 	u32 i;
 	tunt = (struct tunt_table *) kzalloc(sizeof(struct tunt_table), GFP_ATOMIC);
 	if(tunt == NULL){
-		printk("Error - Unable to allocating memory for tunt table");
+		dmesge("tunt_create - Unable to allocating memory for tunt table");
 		return -1;
 	}
 
@@ -276,7 +307,7 @@ int tunt_create(void){
 	tunt->table = (struct tunt_entry **)kzalloc(sizeof(struct tunt_entry *) * tunt->dim, GFP_ATOMIC);
 
 	if(tunt->table == NULL){
-		printk("Error - Unable to allocating memory for tunt table");
+		dmesge("tunt_create - Unable to allocating memory for tunt table");
 		return -1;
 	}
 
@@ -288,7 +319,7 @@ int tunt_create(void){
 
 	tunt->tid_trace = (int *)kzalloc(sizeof(int) * (tunt->dim+1), GFP_ATOMIC);
 	if(tunt->tid_trace == NULL){
-		printk("Error - Unable to allocating memory for tid_trace");
+		dmesge("tunt_create - Unable to allocating memory for tid_trace");
 		return -1;
 	}
 	memset(tunt->tid_trace, 0, tunt->dim+1);

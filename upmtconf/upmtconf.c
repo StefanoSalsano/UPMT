@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <string.h>
 #include <arpa/inet.h>
 
 #include "upmt_user.h"
@@ -19,6 +20,7 @@
 #define C_ECH 6
 #define C_VRB 7
 #define C_FSH 8
+#define C_KPA 9
 
 /*JNI*/#ifdef CREATELIB
 /*JNI*/#include "upmt_os_Module.h"
@@ -34,6 +36,7 @@
 /*JNI*/		jclass strCls = (*env)->FindClass(env, "Ljava/lang/String;");
 /*JNI*/#else
 /*JNI*/		jclass strCls = (*env)->FindClass(env, "[Ljava/lang/String;");
+/*JNI*/		//jclass strCls = (*env)->FindClass(env, "Ljava/lang/String;");
 /*JNI*/#endif
 /*JNI*/		int length = (*env)->GetArrayLength(env, param);
 /*JNI*/	
@@ -63,19 +66,19 @@
 int op = 0;
 /*JNI*/#endif
 
-void usage(){
-	printf("\n USAGE\n");
+void usage(char *message){
+	printf("\n Error: %s\n", message);
 	exit(-1);
 }
 
 void set_op(int operation){
 	if(op == 0) op = operation;
-	else usage();
+	else usage("Invalid operation");
 }
 
 void parse_number(int *n, char *string){
 	*n = atoi(string);
-	if(*n == 0) usage();
+	if(*n == 0) usage("Invalid number");
 }
 
 /*JNI*/#ifdef CREATELIB
@@ -103,20 +106,29 @@ int main(int argc, char **argv){
 	unsigned int remote_port 		= 0;
 	unsigned int inat_local_address 	= 0;
 	unsigned int inat_remote_address	= 0;
+	unsigned int keepAlive_period	= 0;
+	unsigned int keepAlive_timeout	= 0;
 	int tid 						= -1;
 	int rid 						= -1;
 	int ifindex 					= -1;
-	int proto 						= -1;
+	unsigned int proto				= 0;
 	int mark 						= -1;
 	int verbose						= -1;
+	int keepAlive					= -1;
+	int fam							= -1;
 
 	int command 					= -1;
 	char staticrule					= 2; // 2 = not static if new rule, don't change if modifying existing rule
 
 	int c;
 
-	while((c = getopt(argc, argv, "a:g:x:i:d:l:r:n:p:s:f:h:m:M:eV:S:D:t"))!= -1) {
+	while((c = getopt(argc, argv, "G:a:g:x:i:d:l:r:n:p:s:f:h:m:M:eV:S:D:t:k:T:"))!= -1) {
 		switch (c) {
+
+			case 'G':
+				fam = atoi(optarg);
+				if(fam == 0) usage("Invalid option -G");
+				break;
 
 			case 'e':
 				set_op(C_ECH);
@@ -134,7 +146,7 @@ int main(int argc, char **argv){
 				else if(strcmp(optarg, "tsa") == 0) 	tsa = optarg;
 				else if(strcmp(optarg, "dev") == 0) 	dev = optarg;
 				else if(strcmp(optarg, "vpn") == 0) 	vpn = optarg;
-				else usage();
+				else usage("Invalid option -a");
 				set_op(C_ADD);
 				break;
 
@@ -143,14 +155,14 @@ int main(int argc, char **argv){
 				else if(strcmp(optarg, "rule") == 0) 	flush = optarg;
 				else if(strcmp(optarg, "tsa") == 0) 	flush = optarg;
 				else if(strcmp(optarg, "all") == 0) 	flush = optarg;
-				else usage();
+				else usage("Invalid option -f");
 				set_op(C_FSH);
 				break;
 
 			case 'g':
 				if(strcmp(optarg, "tun") == 0) 			tun	 = optarg;
 				else if(strcmp(optarg, "rule") == 0) 	rule = optarg;
-				else usage();
+				else usage("Invalid option -g");
 				set_op(C_GET);
 				break;
 
@@ -160,13 +172,13 @@ int main(int argc, char **argv){
 				else if(strcmp(optarg, "tsa") == 0) 	tsa = optarg;
 				else if(strcmp(optarg, "dev") == 0) 	dev = optarg;
 				else if(strcmp(optarg, "vpn") == 0) 	vpn = optarg;
-				else usage();
+				else usage("Invalid option -x");
 				set_op(C_DEL);
 				break;
 
 			case 'm':
 				if(strcmp(optarg, "an") == 0) 			an	 = optarg;
-				else usage();
+				else usage("Invalid option -m");
 				break;
 
 			case 'h':
@@ -182,7 +194,7 @@ int main(int argc, char **argv){
 				else if(strcmp(optarg, "vpn") == 0)		{ vpn = optarg; 	set_op(C_LST); }
 				else{
 					local_port = atoi(optarg);
-					if(local_port == 0) usage();
+					if(local_port == 0) usage("Invalid option -l");
 				}
 				break;
 
@@ -191,17 +203,17 @@ int main(int argc, char **argv){
 				break;
 
 			case 'd':
-				if(inet_pton(AF_INET, optarg, &remote_address) != 1) usage();
+				if(inet_pton(AF_INET, optarg, &remote_address) != 1) usage("Invalid option -d");
 				break;
 
 			case 'S':
 				if(strcmp(optarg, "off") == 0) break;
-				if(inet_pton(AF_INET, optarg, &inat_local_address) != 1) usage();
+				if(inet_pton(AF_INET, optarg, &inat_local_address) != 1) usage("Invalid option -S");
 				break;
 
 			case 'D':
 				if(strcmp(optarg, "off") == 0) break;
-				if(inet_pton(AF_INET, optarg, &inat_remote_address) != 1) usage();
+				if(inet_pton(AF_INET, optarg, &inat_remote_address) != 1) usage("Invalid option -D");
 				break;
 
 			case 'r':
@@ -216,11 +228,11 @@ int main(int argc, char **argv){
 			case 'p':
 				if(strcmp(optarg, "tcp") == 0) 			proto = 6;
 				else if(strcmp(optarg, "udp") == 0) 	proto = 17;
-				else usage();
+				else usage("Invalid option -p");
 				break;
 
 			case 's':
-				if(inet_pton(AF_INET, optarg, &local_address) != 1) usage();
+				if(inet_pton(AF_INET, optarg, &local_address) != 1) usage("Invalid option -s");
 				break;
 
 			case 'M':
@@ -231,8 +243,20 @@ int main(int argc, char **argv){
 				staticrule = 1;
 				break;
 
+			case 'k':
+				if(strcmp(optarg, "on") == 0)			keepAlive = 10;
+				else if(strcmp(optarg, "off") == 0) 	keepAlive = 0;
+				else parse_number(&keepAlive_period, optarg);
+				//else usage("-k option --- values: on/off");
+				set_op(C_KPA);
+				break;
+
+			case 'T':
+				parse_number(&keepAlive_timeout, optarg);
+				break;
+
 			default:
-				usage();
+				usage("Usage Error");
 				break;
 			}
 	}
@@ -270,11 +294,17 @@ int main(int argc, char **argv){
 					.remote = inat_remote_address
 			}
 	};
+	//struct tun_param tp;
+	//memset(&tp, 0, sizeof(struct tun_param));
+	//tp.tid = tid;
 
-	if(local_port > 65535) usage();
-	if(remote_port > 65535) usage();
+	if(local_port > 65535) usage("Invalid port value");
+	if(remote_port > 65535) usage("Invalid port value");
 
-	upmt_genl_client_init();
+
+	//init_data();
+	upmt_genl_client_init(fam);
+	init_data();
 
 	if(op == C_FSH){
 		send_flush_command(flush);
@@ -286,14 +316,19 @@ int main(int argc, char **argv){
 		receive_response();
 	}
 
+	if(op == C_KPA){
+		send_keepAlive_command(keepAlive, tid, keepAlive_period, keepAlive_timeout);
+		receive_response();
+	}
+
 	if(op == C_ECH){
 		send_echo_command();
 		receive_response();
 	}
 
 	if(op == C_HAN){
-		if(rid <= 0) usage();
-		if(tid <= 0) usage();
+		if(rid <= 0) usage("Invalid rid value");
+		if(tid <= 0) usage("Invalid tid value");
 		//printf("\n\t TID: %d", tid);
 		//printf("\n\t RID: %d", rid);
 		send_handover_command(rid, tid);
@@ -302,13 +337,13 @@ int main(int argc, char **argv){
 
 	if(dev != NULL){
 		if(op == C_ADD){
-			if(iname == NULL) usage();
+			if(iname == NULL) usage("Invalid iname value");
 			command = UPMT_C_SET_MDL;
 			send_mdl_command(command, iname);
 			printf("\n Sending set-dev request...");
 		}
 		if(op == C_DEL){
-			if(iname == NULL) usage();
+			if(iname == NULL) usage("Invalid iname value");
 			command = UPMT_C_DEL_MDL;
 			send_mdl_command(command, iname);
 			printf("\n Sending del-dev request...");
@@ -323,13 +358,13 @@ int main(int argc, char **argv){
 
 	if(tsa != NULL){
 		if(op == C_ADD){
-			if((iname == NULL)||(local_port == 0)) usage();
+			if((iname == NULL)||(local_port == 0)) usage("Invalid iname/local_port values");
 			command = UPMT_C_SET_TSA;
 			send_tsa_command(command, &tl, iname);
 			printf("\n Sending set-tsa request...");
 		}
 		if(op == C_DEL){
-			if((iname == NULL)||(local_port == 0)) usage();
+			if((iname == NULL)||(local_port == 0)) usage("Invalid iname/local_port values");
 			command = UPMT_C_DEL_TSA;
 			send_tsa_command(command, &tl, iname);
 			printf("\n Sending del-tsa request...");
@@ -344,21 +379,21 @@ int main(int argc, char **argv){
 
 	if(tun != NULL){
 		if(op == C_ADD){
-			if((iname == NULL)||(local_port == 0)||(remote_address == 0)||(remote_port == 0)) usage();
+			if((iname == NULL)||(local_port == 0)||(remote_address == 0)||(remote_port == 0)) usage("Invalid add values");
 			command = UPMT_C_SET_TUNNEL;
 			send_tunt_command(command, iname, &tp);
 			printf("\n Sending set-tun request...");
 		}
 
 		if(op == C_GET){
-			if(tid <= 0) usage();
+			if(tid <= 0) usage("Invalid tid value");
 			command = UPMT_C_GET_TUNNEL;
 			send_tunt_command(command, NULL, &tp);
 			printf("\n Sending get-tun request...");
 		}
 
 		if(op == C_DEL){
-			if(tid <= 0) usage();
+			if(tid <= 0) usage("Invalid tid value");
 			command = UPMT_C_DEL_TUNNEL;
 			send_tunt_command(command, iname, &tp);
 			printf("\n Sending del-tun request...");
@@ -375,7 +410,7 @@ int main(int argc, char **argv){
 
 	if(rule != NULL){
 		if(op == C_ADD){
-			if((proto < 0)||(local_address == 0)||(local_port == 0)||(remote_address == 0)||(remote_port == 0)) usage();
+			if((proto < 0)||(local_address == 0)||(local_port == 0)||(remote_address == 0)||(remote_port == 0)) usage("Invalid add values");
 			command = UPMT_C_SET_RULE;
 			send_paft_command(command, tid, rid, &key, staticrule);
 			printf("\n Sending set-rule request...");
@@ -383,7 +418,7 @@ int main(int argc, char **argv){
 
 		if(op == C_GET){
 			rid = tid;
-			if(rid <= 0) usage();
+			//if(rid <= 0) usage("Invalid rid value");
 			command = UPMT_C_GET_RULE;
 			send_paft_command(command, -1, rid, &key, -1);
 			printf("\n Sending get-rule request...");
@@ -391,7 +426,7 @@ int main(int argc, char **argv){
 
 		if(op == C_DEL){
 			rid = tid;
-			if(rid <= 0) usage();
+			if(rid <= 0) usage("Invalid rid value");
 			command = UPMT_C_DEL_RULE;
 			send_paft_command(command, -1, rid, &key, -1);
 			printf("\n Sending del-rule request...");
@@ -407,20 +442,20 @@ int main(int argc, char **argv){
 	}
 
 	if(an != NULL){
-		if(mark < 0) usage();
+		if(mark < 0) usage("Invalid mark value");
 		send_an_command(mark);
 		receive_response();
 	}
 
 	if(vpn != NULL){
 		if(op == C_ADD){
-			if((remote_address == 0) || (tid < 0)) usage();
+			if((remote_address == 0) || (tid < 0)) usage("Invalid tid/remote_address value");
 			command = UPMT_C_SET_PDFT;
 			send_pdft_command(command, remote_address, tid);
 			printf("\n Sending set-pdft request...");
 		}
 		if(op == C_DEL){
-			if((remote_address == 0)) usage();
+			if((remote_address == 0)) usage("Invalid remote address");
 			command = UPMT_C_DEL_PDFT;
 			send_pdft_command(command, remote_address, tid);
 			printf("\n Sending del-pdft request...");
@@ -442,3 +477,9 @@ int main(int argc, char **argv){
 
 	return 0;
 }
+
+
+//upmtconf -a dev -i eth0 ---> OK
+//upmtconf -a tun -i eth0 -d 10.0.0.2 -l 50000 -r 51000 ---> OK
+
+//upmtconf -a rule -p udp -s 10.0.0.1 -d 10.0.0.2 -l 10000 -r 20000 -n 1

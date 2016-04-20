@@ -8,7 +8,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.Vector;
 
@@ -60,6 +62,8 @@ public class ConfigManager implements Configurable
 	public int sipTunneledPort = Default.portForTunnelledSip;
 	public int sbcSipPort = Default.upmtServerPort;
 	public int keepalivePeriod = Default.CONFIG_KEEPALIVE_PERIOD;
+	public int keepaliveTimeout = 0;
+	public boolean keepaliveKernel = false;
 
 	//NetworkMonitor
 	public String networkMonitor = Default.network_monitor;
@@ -91,9 +95,13 @@ public class ConfigManager implements Configurable
 	public String[] noUpmtApp = Default.no_upmt_app;
 
 	//Radio Multiple Eterogenee
-	public boolean rme = false;
-	public String rmeConfig = null;
-	public String[] rmeInterfaces = Default.rmeIFS;
+	public String[] rmeNet = null;
+	public String[] adhocwlan = null;
+	public HashMap<String, ArrayList<String>> rmeApplicationPolicy = new HashMap<String, ArrayList<String>>();
+	public String vepa = null;
+	public int ddsQosPort;
+	public ArrayList<String> olsrdConf = new ArrayList<String>();
+	public boolean interfaceBalance = false;
 
 
 	public void parseLine(String line)
@@ -121,6 +129,13 @@ public class ConfigManager implements Configurable
 		else if (attribute.equals(Default.portForTunnelledSipTag)) sipTunneledPort = par.getInt();
 		else if (attribute.equals(Default.upmtServerPortTag)) sbcSipPort = par.getInt();
 		else if (attribute.equals(Default.CONFIG_KEEPALIVE_PERIOD_TAG)) keepalivePeriod = par.getInt();
+		else if (attribute.equals(Default.CONFIG_KEEPALIVE_TIMEOUT)) keepaliveTimeout = par.getInt();
+		else if (attribute.equals(Default.CONFIG_KEEPALIVE_KERNEL)) {
+			String kernelkeepalive = par.getString();
+			if(kernelkeepalive.equalsIgnoreCase("yes")) {
+				keepaliveKernel = true;
+			}
+		}
 
 		//NetworkMonitor
 		else if (attribute.equals(Default.network_monitor_TAG)) networkMonitor = par.getString();
@@ -151,12 +166,24 @@ public class ConfigManager implements Configurable
 		}
 
 		//RME
-		else if (attribute.equals(Default.rme_TAG)) 
-		{
-			if(par.getInt()==1) rme = true;
+		else if (attribute.equals(Default.rme_app_policy_TAG)) {
+			ArrayList<String> policy = par.getWordArrayList(Default.delim);
+			rmeApplicationPolicy.put(policy.remove(0), policy);
 		}
-		else if (attribute.equals(Default.rmeConfig_TAG)) rmeConfig = par.getString();
-		else if (attribute.equals(Default.rme_interfaces_TAG)) rmeInterfaces = par.getWordArray(Default.delim);
+		else if (attribute.equals(Default.vepa_TAG)) vepa = par.getString();
+		else if (attribute.equals(Default.rmeNet_TAG)) rmeNet = par.getWordArray(Default.delim);
+		else if (attribute.equals(Default.rmeOlsrd_TAG)) {
+			String olsrdSinglePath = par.getString();
+			olsrdConf.add(olsrdSinglePath);
+		}
+		else if(attribute.equals(Default.adhocwlan_TAG)) adhocwlan = par.getWordArray(Default.delim);
+		else if(attribute.equals(Default.ddsQosPort_TAG)) ddsQosPort = Integer.parseInt(par.getString());
+		else if(attribute.equals(Default.interfaceBalance_TAG)) {
+			String balance = par.getString();
+			if(balance.equalsIgnoreCase("yes")) {
+				interfaceBalance = true;
+			}
+		}
 	}
 
 	//TODO: con i nomi delle variabili fatte bene si potrebbe usare la reflection invece di usare write e poi mettere il campo a mano (vedi "UPMTClient.start()")

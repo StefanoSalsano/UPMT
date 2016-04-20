@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<project default="create_run_jar" name="Create Runnable Jar for Project upmt">
+    <!--this file was created by Eclipse Runnable JAR Export Wizard-->
+    <!--ANT 1.7 is required                                        -->
+    <target name="create_run_jar">
+        <jar destfile="/home/upmt/upmt-devel/java/upmt/RMEpeer.jar" filesetmanifest="mergewithoutmain">
+            <manifest>
+                <attribute name="Main-Class" value="upmt.peer.RMEPeer"/>
+                <attribute name="Class-Path" value="."/>
+            </manifest>
+            <fileset dir="/home/upmt/upmt-devel/java/upmt/bin"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/junit.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/matthew.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/slf4j-api-1.5.6.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/slf4j-jdk14-1.5.6.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/jchart2d-3.2.0.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/android.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/jcommon-1.0.17.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/jfreechart-1.0.14.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/dbus-2.8.jar"/>
+            <zipfileset excludes="META-INF/*.SF" src="/home/upmt/upmt-devel/java/upmt/lib/jmf.jar"/>
+        </jar>
+    </target>
+</project>

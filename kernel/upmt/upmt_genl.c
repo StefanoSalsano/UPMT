@@ -17,15 +17,22 @@
 #include "include/upmt_stamp.h"
 #include "include/upmt_locks.h"
 #include "include/upmt_genl_config.h"
-
+#include "include/upmt_netfilter.h"
 #include "include/upmt_pdft.h"
+#include "include/upmt_ka.h"
 
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
 #include <linux/inetdevice.h>
 #include <net/netlink.h>
+#include <linux/sched.h>
+#include <linux/utsname.h>
+#include <linux/pid_namespace.h>
+#include <net/net_namespace.h>
+#include <linux/ipc_namespace.h>
 #include <net/genetlink.h>
+#include <linux/in.h>
 
 
 int verbose = 0;
@@ -33,9 +40,11 @@ int verbose = 0;
 static struct genl_family upmt_gnl_family = {
 	.id = GENL_ID_GENERATE,
 	.hdrsize = 0,
-	.name = UPMT_GNL_FAMILY_NAME,
+//	Family name is now computed during module loading for namespace support (Sander)
+//	.name = UPMT_GNL_FAMILY_NAME,
 	.version = UPMT_GNL_FAMILY_VERSION,
 	.maxattr = UPMT_A_MSG_MAX,
+	.netnsok = true, //this allows the family to be visible across different network namespaces
 };
 
 static struct nla_policy upmt_genl_policy[UPMT_A_MSG_MAX + 1] = {
@@ -69,7 +78,7 @@ static void *extract_nl_attr(const struct genl_info *info, const int atype){
 }
 
 /*static void print_upmt_type_msg(const char *c){
-	printk("\n\t msg_type:\t %s", c);
+	dmesg("msg_type: %s", c);
 }*/
 
 static void set_msg_data(struct RESP_MSG_DATA *msg_data, int type, void *data, int len){
@@ -90,18 +99,18 @@ static int send_response_message(const int command, const unsigned int n_data, c
 	{
 		skb = genlmsg_new(NLMSG_GOODSIZE, GFP_ATOMIC);
 		if (skb == NULL){
-			printk("\n\t send_response_message - unable to allocate skb");
+			dmesge("send_response_message - unable to allocate skb");
 			return -1;
 		}
 
 		skb_head = genlmsg_put(skb, 0, info->snd_seq+1, &upmt_gnl_family, 0, command);
 		if (skb_head == NULL) {
-			printk("\n\t send_response_message - unable to allocate skb_head");
+			dmesge("send_response_message - unable to allocate skb_head");
 			return -ENOMEM;
 		}
 
 		if(nla_put_string(skb, UPMT_A_MSG_TYPE, RESPONSE_MSG) != 0){
-			printk("\n\t send_response_message - unable to put UPMT_A_MSG_TYPE attribute");
+			dmesge("send_response_message - unable to put UPMT_A_MSG_TYPE attribute");
 			return -1;
 		}
 
@@ -109,7 +118,7 @@ static int send_response_message(const int command, const unsigned int n_data, c
 
 		for(i = MAX_RULES_PER_MSG * nummsg; i < (MAX_RULES_PER_MSG * nummsg + tosend); i++){
 			if((ret = nla_put(skb, msg_data[i].atype, msg_data[i].len, msg_data[i].data)) < 0){
-				printk("\n\t send_response_message - unable to put attribute %d for elem %d/%d: %d", msg_data[i].atype, i, n_data, ret);
+				dmesge("send_response_message - unable to put attribute %d for elem %d/%d: %d", msg_data[i].atype, i, n_data, ret);
 				return -1;
 			}
 		}
@@ -117,7 +126,7 @@ static int send_response_message(const int command, const unsigned int n_data, c
 		if (remaining <= MAX_RULES_PER_MSG) { // is last message
 			if ( (command == UPMT_C_LST_TUNNEL) || (command == UPMT_C_LST_RULE) || (command == UPMT_C_LST_TSA) ) {
 				if (nla_put_string(skb, UPMT_A_LAST_LST_MSG, "lastmsg") != 0) {
-					printk("\n\t send_response_message - unable to put attribute UPMT_A_LAST_LST_MSG\n");
+					dmesge("send_response_message - unable to put attribute UPMT_A_LAST_LST_MSG");
 					return -1;
 				}
 			}
@@ -125,12 +134,13 @@ static int send_response_message(const int command, const unsigned int n_data, c
 
 		genlmsg_end(skb, skb_head);
 
+	// since 3.7.0 genl_info snd_id has been renamed into snd_portid (Sander)
 	#if LINUX_VERSION_CODE < UPMT_LINUX_VERSION_CODE
-		if(genlmsg_unicast(skb, info->snd_pid ) != 0){
+		if(genlmsg_unicast(skb, info->snd_portid ) != 0){
 	#else
-		if(genlmsg_unicast(&init_net, skb, info->snd_pid ) != 0){
+		if(genlmsg_unicast(upmtns->net_ns, skb, info->snd_portid ) != 0){ // now using the proper namespace (Sander)
 	#endif
-			printk("\n\t send_response_message - unable to send response");
+			dmesge("send_response_message - unable to send response - info->snd_portid = %u", info->snd_portid);
 			return -1;
 		}
 		
@@ -149,11 +159,11 @@ static int send_error_response_message(const int command, const struct genl_info
 
 static int upmt_echo(struct sk_buff *skb, struct genl_info *info){
 	char *msg_a_type;
-	char *response = "Hello from upmt module in kernel space.";
+	char *response = "Hello from UPMT module in kernel space.";
 
-	//printk("\n\t upmt_set - ECHO MESSAGE RECEIVED");
+	//dmesg("upmt_set - ECHO MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_get - error");
+		dmesge("upmt_get - info = NULL");
 		return -1;
 	}
 
@@ -163,7 +173,7 @@ static int upmt_echo(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_echo - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_echo - msg_a_type, wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
@@ -178,18 +188,16 @@ static int upmt_echo(struct sk_buff *skb, struct genl_info *info){
 /* message handling code goes here; return 0 on success, negative values on failure */
 static int upmt_paft_get(struct sk_buff *skb, struct genl_info *info){
 	unsigned int n_data = 0;
-	struct net_device *dev;
-	//struct upmt_key *key;
-	//struct tunt_entry *te;
+	struct upmt_key *key;
 	struct paft_entry *pe;
-	char *msg_a_type, *response, *iname;
+	char *msg_a_type;
 	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
-	int res, rid;
+	int res;
 	char staticrule;
 
-	//printk("\n\t upmt_paft_get - GET MESSAGE RECEIVED");
+	//dmesg("upmt_paft_get - GET MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_paft_get - error");
+		dmesge("upmt_paft_get - info = NULL");
 		return -1;
 	}
 
@@ -199,30 +207,44 @@ static int upmt_paft_get(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_paft_get - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_paft_get - msg_a_type, wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
-	rid = *(int *) extract_nl_attr(info, UPMT_A_PAFT_RID);
-	//print_upmt_key(key);
-
+	//rid = *(int *) extract_nl_attr(info, UPMT_A_PAFT_RID);
+	key = (struct upmt_key *) extract_nl_attr(info, UPMT_A_PAFT_KEY);
+	if(key == NULL){
+		dmesge("upmt_paft_get - upmt_key = NULL");
+		return -1;
+	}
+	//else print_upmt_key(key);
+	//return 0;
 	/*
 	 * Creating GET response
 	 */
 
-	bul_read_lock_bh();
+	//check_context("upmt_paft_get");
 
-	pe = paft_search_by_rid(rid);
+	pe = paft_search_by_remote_key(key);
+	//pe = paft_search_by_rid(rid);
 	//te = paft_get_tun(key);
 	staticrule = pe->staticrule;
 
 	if(pe == NULL){
+		//dmesg("Rule not found.");
 		res = send_error_response_message(UPMT_C_GET_RULE, info, "Rule not found.");
 		goto end;
 	}
 
-	set_msg_data(&msg_data[0], UPMT_A_PAFT_KEY, &pe->key, sizeof(struct upmt_key));
+	//dmesg("Rule FOUNDED.");
+	set_msg_data(&msg_data[0], UPMT_A_PAFT_RID,	&pe->rid, sizeof(int));
+	set_msg_data(&msg_data[1], UPMT_A_PAFT_KEY,	&pe->key, sizeof(struct upmt_key));
+	set_msg_data(&msg_data[2], UPMT_A_TUN_TID,	&pe->te->tp.tid, sizeof(int));
+	set_msg_data(&msg_data[3], UPMT_A_PAFT_STATIC,	&pe->staticrule, sizeof(char));
+	n_data = 4;
+
+	/*set_msg_data(&msg_data[0], UPMT_A_PAFT_KEY, &pe->key, sizeof(struct upmt_key));
 	if(pe->te == NULL){
 		response = "This rule has not a tunnel";
 		set_msg_data(&msg_data[1], UPMT_A_MSG_MESSAGE, response, strlen(response));
@@ -230,7 +252,7 @@ static int upmt_paft_get(struct sk_buff *skb, struct genl_info *info){
 		n_data = 3;
 	}
 	else{
-		dev = dev_get_by_index(&init_net, pe->te->tp.tl.ifindex);  //XXX use mdl_search_by_idx where idx is the mark
+		dev = dev_get_by_index(upmtns->net_ns, pe->te->tp.tl.ifindex);  //XXX use mdl_search_by_idx where idx is the mark
 		if(dev == NULL) iname = "Warning! Device does not exist!";
 		else iname = dev->name;
 		set_msg_data(&msg_data[1], UPMT_A_TUN_DEV, iname, strlen(iname));
@@ -238,13 +260,11 @@ static int upmt_paft_get(struct sk_buff *skb, struct genl_info *info){
 		set_msg_data(&msg_data[3], UPMT_A_PAFT_STATIC, &staticrule, sizeof(char));
 		n_data = 4;
 		dev_put(dev); //XXX
-	}
+	}*/
 
 	res = send_response_message(UPMT_C_GET_RULE, n_data, msg_data, info);
 
 end:
-	bul_read_unlock_bh();
-
 	return res;
 }
 
@@ -258,9 +278,9 @@ static int upmt_paft_set(struct sk_buff *skb, struct genl_info *info){
 	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
 	char staticrule;
 
-	//printk("\n\t upmt_paft_set - SET MESSAGE RECEIVED");
+	dmesg("upmt_paft_set - SET MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_paft_set - error");
+		dmesge("upmt_paft_set - info = NULL");
 		return -1;
 	}
 
@@ -270,13 +290,12 @@ static int upmt_paft_set(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_paft_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_paft_set - msg_a_type, wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	tid = *(int *) extract_nl_attr(info, UPMT_A_TUN_TID);
-	//printk("\n\t - TID: %d", tid);
 
 	key = (struct upmt_key *) extract_nl_attr(info, UPMT_A_PAFT_KEY);
 	//print_upmt_key(key);
@@ -296,20 +315,18 @@ static int upmt_paft_set(struct sk_buff *skb, struct genl_info *info){
 	 * Creating SET response
 	 */
 
-	bul_write_lock_bh();
-	
 	if (tid > 0) {
 		te = tunt_search_by_tid(tid);
 		if (te == NULL) {
 			res = send_error_response_message(UPMT_C_SET_RULE, info, "Tunnel does not exist.");
-			goto end;
+			goto lock_end;
 		}
 	}
 	else { // we are editing a rule which is already set (i.e. setting it static)
 		te = paft_get_tun(key);
 		if (te == NULL) {
 			res = send_error_response_message(UPMT_C_SET_RULE, info, "Rule does not exist (tunnel not provided).");
-			goto end;
+			goto lock_end;
 		}
 	}
 	
@@ -323,10 +340,10 @@ static int upmt_paft_set(struct sk_buff *skb, struct genl_info *info){
 
 	if(paft_insert(key, te, staticrule) == NULL){
 		res = send_error_response_message(UPMT_C_SET_RULE, info, "Error while inserting paft rule (type 'dmesg' for details).");
-		goto end;
+		goto lock_end;
 	}
 
-	dev = dev_get_by_index(&init_net, te->tp.tl.ifindex); //XXX use mdl_search_by_idx where idx is the mark
+	dev = dev_get_by_index(upmtns->net_ns, te->tp.tl.ifindex); //XXX use mdl_search_by_idx where idx is the mark
 	if(dev == NULL) iname = "Warning! Device does not exist!";
 	else iname = dev->name;
 	set_msg_data(&msg_data[0], UPMT_A_TUN_DEV, iname, strlen(iname));
@@ -336,11 +353,13 @@ static int upmt_paft_set(struct sk_buff *skb, struct genl_info *info){
 	n_data = 4;
 	dev_put(dev); //XXX
 
+	print_upmt_key_line(key);
+	printk("TID: %d\n", tid);
 
 	res = send_response_message(UPMT_C_SET_RULE, n_data, msg_data, info);
 
+lock_end:
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -349,9 +368,9 @@ static int upmt_paft_del(struct sk_buff *skb, struct genl_info *info){
 	struct paft_entry *pe;
 	char *msg_a_type;
 
-	//printk("\n\t upmt_del - DEL MESSAGE RECEIVED");
+	//dmesg("upmt_del - DEL MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_del - error");
+		dmesge("upmt_paft_del - info = NULL");
 		return -1;
 	}
 
@@ -361,19 +380,18 @@ static int upmt_paft_del(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_del - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_paft_del - msg_a_type, wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	rid = *(int *) extract_nl_attr(info, UPMT_A_PAFT_RID);
-	//printk("\n\t - RID: %d", rid);
+	//dmesg("RID: %d", rid);
 
 	/*
 	 * Creating DEL response
 	 */
 
-	bul_write_lock_bh();
 	pe = paft_search_by_rid(rid);
 	if(pe == NULL){
 		res = send_error_response_message(UPMT_C_DEL_RULE, info, "Rule not found.");
@@ -388,7 +406,6 @@ static int upmt_paft_del(struct sk_buff *skb, struct genl_info *info){
 	res = send_error_response_message(UPMT_C_DEL_RULE, info, "Rule deleted.");
 
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -399,9 +416,8 @@ static int upmt_paft_lst(struct sk_buff *skb, struct genl_info *info){
 	int N, i, res;
 	long pea_extrasize, msg_data_extrasize;
 
-	//printk("\n\t upmt_paft_lst - LST MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_paft_lst - error");
+		dmesge("upmt_paft_lst - info = NULL");
 		return -1;
 	}
 
@@ -411,7 +427,7 @@ static int upmt_paft_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_paft_lst - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_paft_list - msg_a_type - wrong message format");
 		return -1;
 	}
 
@@ -422,23 +438,24 @@ static int upmt_paft_lst(struct sk_buff *skb, struct genl_info *info){
 	}
 
 	pea_extrasize = (sizeof(struct paft_entry *) * N * 6)/5;		//XXX 20% extra per compensare paft_count() fuori dal lock
-	pea = (struct paft_entry **) vzalloc(pea_extrasize);
+	//pea = (struct paft_entry **) vzalloc(pea_extrasize);
+	pea = (struct paft_entry **) kmalloc(pea_extrasize, GFP_ATOMIC);
+
 	if(pea == NULL){
-		printk("upmt_paft_lst - Error - Unable to allocate memory for tpa");
+		dmesge("upmt_paft_lst - Unable to allocate memory for tpa");
 		res = send_error_response_message(UPMT_C_LST_RULE, info, "Error while creating rule list1 (type 'dmesg' for details).");
 		goto end;
 	}
 	
 	msg_data_extrasize = (sizeof(struct RESP_MSG_DATA) * (N*4) * 6)/5;		//XXX 20% extra per compensare paft_count() fuori dal lock
-	msg_data = (struct RESP_MSG_DATA *) vzalloc(msg_data_extrasize);
+	//msg_data = (struct RESP_MSG_DATA *) vzalloc(msg_data_extrasize);
+	msg_data = (struct RESP_MSG_DATA *) kmalloc(msg_data_extrasize, GFP_ATOMIC);
 	if(msg_data == NULL){
-		printk("upmt_paft_lst - Error - Unable to allocating memory for msg_data");
+		dmesge("upmt_paft_lst - Unable to allocate memory for msg_data");
 		res = send_error_response_message(UPMT_C_LST_RULE, info, "Error while creating rule list2 (type 'dmesg' for details).");
 		goto fail_msg_data;
 	}
 	
-	bul_read_lock_bh();
-
 	paft_fill_pointers(pea);
 
 	N = paft_count();
@@ -451,8 +468,6 @@ static int upmt_paft_lst(struct sk_buff *skb, struct genl_info *info){
 	}
 
 	res = send_response_message(UPMT_C_LST_RULE, N*4, msg_data, info);
-
-	bul_read_unlock_bh();
 
 	vfree(msg_data);
 
@@ -468,7 +483,36 @@ end:
  * TUNT
  */
 
-static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
+static int upmt_tunt_reserve_port(struct sk_buff *skb, struct genl_info *info){
+	int port, res, command;
+	struct tun_local *tl;
+	struct tun_param *tp;
+
+	port = -1;
+	command = info->genlhdr->cmd;
+
+	if(command == UPMT_C_SET_TSA){
+		tl = (struct tun_local *) extract_nl_attr(info, UPMT_A_TUN_LOCAL);
+		if(tl == NULL) return -1;
+		port = tl->port;
+	}
+	if(command == UPMT_C_SET_TUNNEL){
+		tp = (struct tun_param *) extract_nl_attr(info, UPMT_A_TUN_PARAM);
+		if(tp == NULL) return -1;
+		port = tp->tl.port;
+	}
+	if(port < 0) return -1;
+	
+	dmesg("UPMT - Reserving port %d", port);
+	res = reserve_port(port);
+	if(res < 0){
+		dmesg("UPMT - Reserving port %d FAILED", port);
+		release_port(port);
+	}
+	return res;
+}
+
+static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info, int bound){
 	char *iname, *message;
 	struct tun_param *tp;
 	struct tunt_entry *te;
@@ -476,14 +520,14 @@ static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
 	struct net_device *dev;
 	struct in_device *pin_dev;
 	int res = 0, DT = 0;
-	int bound;
+	//int bound;
 
 	char *msg_a_type;
 	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
 
-	//printk("\n\t upmt_tunt_set - SET MESSAGE RECEIVED");
+	//dmesg("upmt_tunt_set - SET MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tunt_set - error");
+		dmesge("upmt_tunt_set");
 		return -1;
 	}
 
@@ -493,44 +537,48 @@ static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tunt_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tunt_set - msg_a_type - wrong message format");
+
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	iname = (char *) extract_nl_attr(info, UPMT_A_TUN_DEV);
-	//printk("\n\t - DEV: %s", iname);
+	//dmesg("DEV: %s", iname);
 
 	tp = (struct tun_param *) extract_nl_attr(info, UPMT_A_TUN_PARAM);
+	if(tp == NULL){
+		res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Error: tunnel parameters are not valid.");
+		goto end;
+	}
+
 	if(tp->tl.ifindex == 1111) DT = 1;   //XXX 1111 can't be used for MARK -- TODO
 	//print_upmt_tun_param(tp);
 
-	dev = dev_get_by_name(&init_net, iname); //XXX use mdl_search_by_idx where idx is the MARK
+	dev = dev_get_by_name(upmtns->net_ns, iname); //XXX use mdl_search_by_idx where idx is the MARK
 	if(dev == NULL){
 		res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Device does not exist.");
 		goto end;
 	}
 
 	pin_dev = (struct in_device *) dev->ip_ptr;  //XXX useless, if the dev doesn't have a IP addr the routing will fail adn the packet will simply be discarded 
-	if(pin_dev->ifa_list == NULL){
+	/*if(pin_dev->ifa_list == NULL){
 		res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Device has not IP address.");
 		goto end;
-	}
+	}*/
 
 	tp->tl.ifindex = dev->ifindex;  //XXX use the MARK
 	
 	dev_put(dev);  //XXX
 
-	bound = 1;
-	printk("reserving port %d\n", tp->tl.port);
+	//bound = 1;
+	/*dmesg("UPMT - Reserving port %d", tp->tl.port);
 	res = reserve_port(tp->tl.port);
 	if(res < 0){
-		printk("reserving port %d FAILED\n", tp->tl.port);
+		dmesg("UPMT - Reserving port %d FAILED", tp->tl.port);
 		bound = 0;
 		release_port(tp->tl.port);
-	}
-
-	bul_write_lock_bh();
+	}*/
 
 	mde = mdl_search(iname);
 	if(mde == NULL){
@@ -539,7 +587,7 @@ static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
 	}
 	tp->md = &mde->md;
 
-	if (bound == 0) {
+	if (bound < 0) {
 		if (tsa_search(&tp->tl) == NULL){
 			if(res == -1) res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Unable to set TSA: port already reserved.");
 			if(res == -2) res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Unable to set TSA: internal error (type 'dmesg' for details).");
@@ -569,12 +617,22 @@ static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
 			res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Error while inserting tunnel (type 'dmesg' for details).");
 			goto clear_sock;
 		}
+
+		if(te == NULL){
+			//tsa_delete(&tp->tl);
+			//release_port(tp->tl.port);
+			res = send_error_response_message(UPMT_C_SET_TUNNEL, info, "Error while setting keep-alive ON (type 'dmesg' for details).");
+			goto clear_sock;
+		}
 	}
 
 	/*
 	 * Creating SET response
 	 */
 
+	//print_upmt_tun_param_line(tp);
+	//printk("DEV: %s\n", iname);
+	//printk("Tunnel accepted --> TID %d\n", te->tp.tid);
 	message = "Tunnel accepted.";
 	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
 	set_msg_data(&msg_data[1], UPMT_A_TUN_DEV, iname, strlen(iname));
@@ -583,8 +641,6 @@ static int upmt_tunt_set(struct sk_buff *skb, struct genl_info *info){
 	res = send_response_message(UPMT_C_SET_TUNNEL, 3, msg_data, info);
 
 clear_sock:
-	bul_write_unlock_bh();
-
 end:	
 	return res;
 }
@@ -599,9 +655,9 @@ static int upmt_tunt_get(struct sk_buff *skb, struct genl_info *info){
 	char *msg_a_type, *message;
 	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
 
-	//printk("\n\t upmt_tunt_get - GET MESSAGE RECEIVED");
+	//dmesg("upmt_tunt_get - GET MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tunt_get - error");
+		dmesge("upmt_tunt_get");
 		return -1;
 	}
 
@@ -611,15 +667,13 @@ static int upmt_tunt_get(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tunt_get - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tunt_get - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	tp = (struct tun_param *) extract_nl_attr(info, UPMT_A_TUN_PARAM);
 	//print_upmt_tun_param(tp);
-
-	bul_read_lock_bh();
 
 	if(tp->tid <= 0){
 		res = send_error_response_message(UPMT_C_GET_TUNNEL, info, "Tunnel id not valid.");
@@ -632,7 +686,7 @@ static int upmt_tunt_get(struct sk_buff *skb, struct genl_info *info){
 		goto end;
 	}
 
-	dev = dev_get_by_index(&init_net, te->tp.tl.ifindex);  //XXX same as before... useless and dangerous
+	dev = dev_get_by_index(upmtns->net_ns, te->tp.tl.ifindex);  //XXX same as before... useless and dangerous
 	if(dev == NULL) iname = "Warning! Device does not exist!";
 	else iname = dev->name;
 
@@ -641,12 +695,11 @@ static int upmt_tunt_get(struct sk_buff *skb, struct genl_info *info){
 
 	message = "Found.";
 	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
-	set_msg_data(&msg_data[1], UPMT_A_TUN_DEV, iname, strlen(iname));
-	set_msg_data(&msg_data[2], UPMT_A_TUN_PARAM, &te->tp, sizeof(struct tun_param));
+	set_msg_data(&msg_data[1], UPMT_A_TUN_PARAM, &te->tp, sizeof(struct tun_param));
+	set_msg_data(&msg_data[2], UPMT_A_TUN_DEV, iname, strlen(iname));
 
 	res = send_response_message(UPMT_C_GET_TUNNEL, 3, msg_data, info);
 end:
-	bul_read_unlock_bh();
 	return res;
 }
 
@@ -658,9 +711,9 @@ static int upmt_tunt_del(struct sk_buff *skb, struct genl_info *info){
 	char *msg_a_type, *message;
 	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
 
-	//printk("\n\t upmt_tunt_del - DEL MESSAGE RECEIVED");
+	//dmesg("upmt_tunt_del - DEL MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tunt_del - error");
+		dmesge("upmt_tunt_del");
 		return -1;
 	}
 
@@ -670,7 +723,7 @@ static int upmt_tunt_del(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tunt_del - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tunt_del - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
@@ -678,38 +731,37 @@ static int upmt_tunt_del(struct sk_buff *skb, struct genl_info *info){
 	tp = (struct tun_param *) extract_nl_attr(info, UPMT_A_TUN_PARAM);
 	if(tp->tl.ifindex == 1111) tp->tid = 0; //default tunnel
 	//print_upmt_tun_param(tp);
+	//dmesg("TID da cancellare: %d", tp->tid);
 
 	if(tp->tid < 0){
 		res = send_error_response_message(UPMT_C_DEL_TUNNEL, info, "Tunnel id not valid.");
 		goto end;
 	}
 
-	bul_write_lock_bh();
-
 	if(tp->tid == 0){
 		if(tunt_del_default() < 0) res = send_error_response_message(UPMT_C_DEL_TUNNEL, info, "Default tunnel does not exist.");
 		else res = send_error_response_message(UPMT_C_DEL_TUNNEL, info, "Default tunnel deleted.");
-		goto end;
+		goto lock_end;
 	}
 
 	te = tunt_search_by_tid(tp->tid);
 	if(te == NULL){
 		res = send_error_response_message(UPMT_C_DEL_TUNNEL, info, "Tunnel does not exist.");
-		goto end;
+		goto lock_end;
 	}
 
 	res = tunt_delete(&te->tp);
 	if(res != 0){
 		res = send_error_response_message(UPMT_C_DEL_TUNNEL, info, "Error while deleting tunnel.");
-		goto end;
+		goto lock_end;
 	}
 
 	message = "Tunnel deleted.";
 	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
 	res = send_response_message(UPMT_C_DEL_TUNNEL, 1, msg_data, info);
 
+lock_end:
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -722,9 +774,9 @@ static int upmt_tunt_lst(struct sk_buff *skb, struct genl_info *info){
 	char *iname;
 	char message[100];
 
-	//printk("\n\t upmt_tunt_del - DEL MESSAGE RECEIVED");
+	//dmesg("upmt_tunt_del - DEL MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tunt_lst - error");
+		dmesge("upmt_tunt_lst");
 		return -1;
 	}
 
@@ -734,11 +786,9 @@ static int upmt_tunt_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tunt_lst - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tunt_lst - msg_a_type - wrong message format");
 		return -1;
 	}
-
-	bul_read_lock_bh();
 
 	N = tunt_count(); //this function counts the default tunnel too
 
@@ -749,7 +799,7 @@ static int upmt_tunt_lst(struct sk_buff *skb, struct genl_info *info){
 
 	tpa = (struct tun_param **) kzalloc(sizeof(struct tun_param *)*N, GFP_ATOMIC);
 	if(tpa == NULL){
-		printk("upmt_tunt_lst - Error - Unable to allocating memory for tpa");
+		dmesge("upmt_tunt_lst - Unable to allocating memory for tpa");
 		res = send_error_response_message(UPMT_C_LST_TUNNEL, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -760,13 +810,13 @@ static int upmt_tunt_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_data = (struct RESP_MSG_DATA *) kzalloc(sizeof(struct RESP_MSG_DATA)*(n_data), GFP_ATOMIC);
 	if(msg_data == NULL){
-		printk("upmt_tunt_lst - Error - Unable to allocating memory for msg_data");
+		dmesge("upmt_tunt_lst - Unable to allocating memory for msg_data");
 		res = send_error_response_message(UPMT_C_LST_TUNNEL, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
 
 	for(i=0; i<N; i++){
-		dev = dev_get_by_index(&init_net, tpa[i]->tl.ifindex); //XXX
+		dev = dev_get_by_index(upmtns->net_ns, tpa[i]->tl.ifindex); //XXX
 		if(dev == NULL) iname = "Warning! Device does not exist!";
 		else iname = dev->name;
 
@@ -777,18 +827,17 @@ static int upmt_tunt_lst(struct sk_buff *skb, struct genl_info *info){
 	}
 
 	if(default_tunnel != NULL){
-		sprintf(message, "\n ---> Default Tunnel: %d", default_tunnel->tp.tid);
+		sprintf(message, " ---> Default Tunnel: %d", default_tunnel->tp.tid);
 		set_msg_data(&msg_data[n_data-1], UPMT_A_MSG_MESSAGE, message, strlen(message));
 	}
 	else{
-		sprintf(message, "\n ---> Default Tunnel: NOT DEFINED");
+		sprintf(message, " ---> Default Tunnel: NOT DEFINED");
 		set_msg_data(&msg_data[n_data-1], UPMT_A_MSG_MESSAGE, message, strlen(message));
 	}
 
 	res = send_response_message(UPMT_C_LST_TUNNEL, n_data, msg_data, info);
 
 end:
-	bul_read_unlock_bh();
 	kfree(tpa);
 	kfree(msg_data);
 	return res;
@@ -802,9 +851,9 @@ static int upmt_handover(struct sk_buff *skb, struct genl_info *info){
 	char *msg_a_type;
 	//struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
 
-	//printk("\n\t upmt_tunt_handover - handover MESSAGE RECEIVED");
+	//dmesg("upmt_tunt_handover - handover MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tunt_handover - error");
+		dmesge("upmt_tunt_handover");
 		return -1;
 	}
 
@@ -814,16 +863,14 @@ static int upmt_handover(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tunt_handover - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tunt_handover - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 	tid = *(int *) extract_nl_attr(info, UPMT_A_TUN_TID);
-	//printk("\n\t TID: %d", tid);
+	//dmesg("TID: %d", tid);
 	rid = *(int *) extract_nl_attr(info, UPMT_A_PAFT_RID);
-	//printk("\n\t RID: %d", rid);
-
-	bul_write_lock_bh();
+	//dmesg("RID: %d", rid);
 
 	te = tunt_search_by_tid(tid);
 	pe = paft_search_by_rid(rid);
@@ -845,21 +892,19 @@ static int upmt_handover(struct sk_buff *skb, struct genl_info *info){
 //	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
 //	res = send_response_message(UPMT_C_HANDOVER, 1, msg_data, info);
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
-static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info){
+static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info, int bound){
 	struct net_device *dev;
 	char *msg_a_type, *iname;
 	struct tun_local *tl;
 	struct tsa_entry *tsae;
 	int res = 0;
-	int bound;
 
-	//printk("\n\t upmt_tsa_set - set MESSAGE RECEIVED");
+	//dmesg("upmt_tsa_set - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tsa_set - error");
+		dmesge("upmt_tsa_set");
 		return -1;
 	}
 
@@ -869,7 +914,7 @@ static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tsa_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tsa_set - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
@@ -877,7 +922,7 @@ static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info){
 	iname = (char *) extract_nl_attr(info, UPMT_A_TUN_DEV);
 	tl = (struct tun_local *) extract_nl_attr(info, UPMT_A_TUN_LOCAL);
 
-	dev = dev_get_by_name(&init_net, iname); //XXX
+	dev = dev_get_by_name(upmtns->net_ns, iname); //XXX
 	if(dev == NULL){
 		res = send_error_response_message(UPMT_C_SET_TSA, info, "Device does not exist.");
 		goto end;
@@ -886,16 +931,12 @@ static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info){
 
 	dev_put(dev); //XXX	
 
-	bound = 1;
-	res = reserve_port(tl->port);
-	if(res < 0){
+	if(bound < 0){
 		release_port(tl->port);
 		if(res == -1) res = send_error_response_message(UPMT_C_SET_TSA, info, "Unable to set TSA: port already reserved.");
 		if(res == -2) res = send_error_response_message(UPMT_C_SET_TSA, info, "Unable to set TSA: internal error (type 'dmesg' for details).");
 		goto end;
 	}
-
-	bul_write_lock_bh();
 
 	if(mdl_search(iname) == NULL){
 		res = send_error_response_message(UPMT_C_SET_TSA, info, "Device is not under upmt control.");
@@ -917,7 +958,6 @@ static int upmt_tsa_set(struct sk_buff *skb, struct genl_info *info){
 	res = send_error_response_message(UPMT_C_SET_TSA, info, "TSA added.");
 
 clear_sock:
-	bul_write_unlock_bh();
 
 end:	
 	return res;
@@ -930,9 +970,9 @@ static int upmt_tsa_del(struct sk_buff *skb, struct genl_info *info){
 	struct tsa_entry *tsae;
 	int res;
 
-	//printk("\n\t upmt_tsa_del - del MESSAGE RECEIVED");
+	//dmesg("upmt_tsa_del - del MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tsa_del - error");
+		dmesge("upmt_tsa_del");
 		return -1;
 	}
 
@@ -942,7 +982,7 @@ static int upmt_tsa_del(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tsa_del - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tsa_del - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
@@ -952,14 +992,14 @@ static int upmt_tsa_del(struct sk_buff *skb, struct genl_info *info){
 
 	/****/
 
-	/*printk("\t\n iname: %s", iname);
+	/*dmesg("iname: %s", iname);
 	print_upmt_tun_local(tl);
 	send_error_response_message(UPMT_C_DEL_TSA, info, "Message received.");
 	return 0;*/
 
 	/****/
 
-	dev = dev_get_by_name(&init_net, iname); //XXX
+	dev = dev_get_by_name(upmtns->net_ns, iname); //XXX
 	if(dev == NULL){
 		res = send_error_response_message(UPMT_C_DEL_TSA, info, "Device does not exist.");
 		goto end;
@@ -968,12 +1008,10 @@ static int upmt_tsa_del(struct sk_buff *skb, struct genl_info *info){
 
 	dev_put(dev);  //XXX
 
-	bul_write_lock_bh();
-
 	tsae = tsa_search(tl);
 	if(tsae == NULL){
 		res = send_error_response_message(UPMT_C_SET_TSA, info, "TSA not present.");
-		goto end;
+		goto lock_end;
 	}
 	tsa_delete(tl);
 	release_port(tl->port);
@@ -981,8 +1019,8 @@ static int upmt_tsa_del(struct sk_buff *skb, struct genl_info *info){
 
 	res = send_error_response_message(UPMT_C_SET_TSA, info, "TSA deleted.");
 
+lock_end:
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -995,13 +1033,13 @@ static int upmt_tsa_lst(struct sk_buff *skb, struct genl_info *info){
 	int N, i, res;
 
 #ifdef PRINT_INTERRUPT_CONTEXT
-	printk("\n\n\treceiving netlink message");
+	dmesg("receiving netlink message");
 	check_context();
 #endif
 
-	//printk("\n\t upmt_tsa_lst - set MESSAGE RECEIVED");
+	//dmesg("upmt_tsa_lst - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_tsa_lst - error");
+		dmesge("upmt_tsa_lst");
 		return -1;
 	}
 
@@ -1011,11 +1049,9 @@ static int upmt_tsa_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_tsa_lst - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_tsa_lst - msg_a_type - wrong message format");
 		return -1;
 	}
-
-	bul_read_lock_bh();
 
 	N = tsa_count();
 	if(N == 0){
@@ -1025,7 +1061,7 @@ static int upmt_tsa_lst(struct sk_buff *skb, struct genl_info *info){
 
 	tla = (struct tun_local **) kzalloc(sizeof(struct tun_local *)*N, GFP_ATOMIC);
 	if(tla == NULL){
-		printk("upmt_tsa_lst - Error - Unable to allocating memory for tla");
+		dmesge("upmt_tsa_lst - Unable to allocating memory for tla");
 		res = send_error_response_message(UPMT_C_LST_TSA, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -1033,13 +1069,13 @@ static int upmt_tsa_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_data = (struct RESP_MSG_DATA *) kzalloc(sizeof(struct RESP_MSG_DATA)*(N*2+1), GFP_ATOMIC);
 	if(msg_data == NULL){
-		printk("upmt_tsa_lst - Error - Unable to allocating memory for msg_data");
+		dmesge("upmt_tsa_lst - Unable to allocateg memory for msg_data");
 		res = send_error_response_message(UPMT_C_LST_TSA, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
 
 	for(i=0; i<N; i++){
-		dev = dev_get_by_index(&init_net, tla[i]->ifindex); //XXX
+		dev = dev_get_by_index(upmtns->net_ns, tla[i]->ifindex); //XXX
 		if(dev == NULL) iname = "Warning! Device does not exist!";
 		else iname = dev->name;
 
@@ -1052,7 +1088,6 @@ static int upmt_tsa_lst(struct sk_buff *skb, struct genl_info *info){
 	res = send_response_message(UPMT_C_LST_TSA, N*2, msg_data, info);
 
 end:
-	bul_read_unlock_bh();
 	kfree(tla);
 	kfree(msg_data);
 	return res;
@@ -1064,7 +1099,7 @@ static int upmt_an(struct sk_buff *skb, struct genl_info *info){
 	int mark;
 
 	if (info == NULL){
-		printk("\n\t upmt_an - error");
+		dmesge("upmt_an");
 		return -1;
 	}
 
@@ -1074,15 +1109,13 @@ static int upmt_an(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_an - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_an - msg_a_type - wrong message format");
 		return -1;
 	}
 
 	mark = *(int *) extract_nl_attr(info, UPMT_A_AN_MARK);
 
-	bul_write_lock_bh();
 	an_mark = (u32) mark;
-	bul_write_unlock_bh();
 
 	sprintf(response, "AN_MARK updated. Value: %d", mark);
 	return send_error_response_message(UPMT_C_SET_RULE, info, response);
@@ -1094,7 +1127,7 @@ static int upmt_verbose(struct sk_buff *skb, struct genl_info *info){
 	int new_verbose;
 
 	if (info == NULL){
-		printk("\n\t upmt_verbose - error");
+		dmesge("upmt_verbose");
 		return -1;
 	}
 
@@ -1104,7 +1137,7 @@ static int upmt_verbose(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_verbose - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_verbose - msg_a_type - wrong message format");
 		return -1;
 	}
 
@@ -1122,7 +1155,7 @@ static int upmt_flush(struct sk_buff *skb, struct genl_info *info){
 	char response[50];
 
 	if (info == NULL){
-		printk("\n\t upmt_flush - error");
+		dmesg("upmt_flush");
 		return -1;
 	}
 
@@ -1132,13 +1165,12 @@ static int upmt_flush(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_flush - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_flush - msg_a_type - wrong message format");
 		return -1;
 	}
 
 	table = (char *) extract_nl_attr(info, UPMT_A_MSG_MESSAGE);
 
-	bul_write_lock_bh();
 	if((strcmp(table, "tsa") == 0)||(strcmp(table, "all") == 0)){
 		tsa_erase();
 		spl_erase();
@@ -1160,7 +1192,6 @@ static int upmt_flush(struct sk_buff *skb, struct genl_info *info){
 	}
 
 	sprintf(response, "Flush on %s table(s).", table);
-	bul_write_unlock_bh();
 
 	return send_error_response_message(UPMT_C_FLUSH, info, response);
 }
@@ -1172,9 +1203,9 @@ static int upmt_mdl_set(struct sk_buff *skb, struct genl_info *info){
 	int res;
 	struct RESP_MSG_DATA msg_data[2];
 
-	//printk("\n\t upmt_mdl_set - set MESSAGE RECEIVED");
+	//dmesg("upmt_mdl_set - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_mdl_set - error");
+		dmesge("upmt_mdl_set");
 		return -1;
 	}
 
@@ -1184,20 +1215,18 @@ static int upmt_mdl_set(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_mdl_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_mdl_set - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	iname = (char *) extract_nl_attr(info, UPMT_A_TUN_DEV);
 
-	dev = dev_get_by_name(&init_net, iname); //XXX
+	dev = dev_get_by_name(upmtns->net_ns, iname); //XXX
 	if(dev == NULL){
 		res = send_error_response_message(UPMT_C_SET_MDL, info, "Device does not exist.");
 		return res;
 	}
-
-	bul_write_lock_bh();
 
 	me = mdl_search(iname);
 	if(me == NULL){
@@ -1206,9 +1235,14 @@ static int upmt_mdl_set(struct sk_buff *skb, struct genl_info *info){
 			res = send_error_response_message(UPMT_C_SET_MDL, info, "Unable to set device and mark: internal error (type 'dmesg' for details).");
 			goto end;
 		}
+		upmt_ph_register(dev); // Registering packet handler for the new device (Sander)
 		message = "Device is now under upmt control.";
+		printk("Device %s is now under upmt control\n", iname);
 	}
-	else message = "Device is already under upmt control.";
+	else{
+		message = "Device is already under upmt control.";
+		printk("Device %s is already under upmt control\n", iname);
+	}
 
 	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
 	set_msg_data(&msg_data[1], UPMT_A_MARK_DEV, &me->md, sizeof(struct mark_dev));
@@ -1217,7 +1251,6 @@ static int upmt_mdl_set(struct sk_buff *skb, struct genl_info *info){
 
 end:
 	dev_put(dev); //XXX
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -1227,9 +1260,9 @@ static int upmt_mdl_del(struct sk_buff *skb, struct genl_info *info){
 	int res;
 	struct socket *sock = NULL;
 
-	//printk("\n\t upmt_mdl_del - del MESSAGE RECEIVED");
+	//dmesg("upmt_mdl_del - del MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_mdl_del - error");
+		dmesge("upmt_mdl_del");
 		return -1;
 	}
 
@@ -1239,21 +1272,19 @@ static int upmt_mdl_del(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_mdl_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_mdl_set - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	iname = (char *) extract_nl_attr(info, UPMT_A_TUN_DEV);
-	dev = dev_get_by_name(&init_net, iname);  //XXX this is a error. of course it can be null...
+	dev = dev_get_by_name(upmtns->net_ns, iname);  //XXX this is a error. of course it can be null...
 	if(dev == NULL){
 		res = send_error_response_message(UPMT_C_DEL_MDL, info, "Device does not exist.");
 		goto end_no_lock;  //before was "goto end;" ---> PANIK
 	}
 
 	dev_put(dev);  //XXX
-
-	bul_write_lock_bh();
 
 	if(mdl_search(iname) == NULL){
 		res = send_error_response_message(UPMT_C_DEL_MDL, info, "This device is not under upmt control.");
@@ -1267,13 +1298,13 @@ static int upmt_mdl_del(struct sk_buff *skb, struct genl_info *info){
 
 	sock = tsa_delete_by_ifindex(dev->ifindex);  //we can't use ifindex as search key... TODO use the mark
 	tunt_delete_by_ifindex(dev->ifindex);		//open question: is it a problem if the same iface name is added brfore it is removed?
-
+	
 	res = send_error_response_message(UPMT_C_DEL_MDL, info, "Device released.");
 
 end:
-	bul_write_unlock_bh();
 	if (sock) sock_release(sock); //if you do this whene the device has been removed ----> panik
 end_no_lock:
+	upmt_ph_unregister(dev); // Unregistering packet handler for the specified device (Sander)
 	return res;
 }
 
@@ -1283,9 +1314,9 @@ static int upmt_mdl_lst(struct sk_buff *skb, struct genl_info *info){
 	struct mark_dev **mds = NULL;
 	int N, i, res;
 
-	//printk("\n\t upmt_mdl_lst - set MESSAGE RECEIVED");
+	//dmesg("upmt_mdl_lst - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_mdl_lst - error");
+		dmesge("upmt_mdl_lst");
 		return -1;
 	}
 
@@ -1295,11 +1326,9 @@ static int upmt_mdl_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_mdl_lst - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_mdl_lst - msg_a_type - wrong message format");
 		return -1;
 	}
-
-	bul_read_lock_bh();
 
 	N = mdl_count();
 	if(N == 0){
@@ -1309,7 +1338,7 @@ static int upmt_mdl_lst(struct sk_buff *skb, struct genl_info *info){
 
 	mds = (struct mark_dev **) kzalloc(sizeof(struct mark_dev *)*N, GFP_ATOMIC);
 	if(mds == NULL){
-		printk("upmt_mld_lst - Error - Unable to allocating memory for mds");
+		dmesge("upmt_mld_lst - Unable to allocate memory for mds");
 		res = send_error_response_message(UPMT_C_LST_MDL, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -1317,7 +1346,7 @@ static int upmt_mdl_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_data = (struct RESP_MSG_DATA *) kzalloc(sizeof(struct RESP_MSG_DATA)*(N), GFP_ATOMIC);
 	if(msg_data == NULL){
-		printk("upmt_mdl_lst - Error - Unable to allocating memory for msg_data");
+		dmesge("upmt_mdl_lst - Unable to allocate memory for msg_data");
 		res = send_error_response_message(UPMT_C_LST_MDL, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -1329,14 +1358,9 @@ static int upmt_mdl_lst(struct sk_buff *skb, struct genl_info *info){
 	res = send_response_message(UPMT_C_LST_TSA, N, msg_data, info);
 
 end:
-	bul_read_unlock_bh();
 	kfree(mds);
 	kfree(msg_data);
 	return res;
-
-
-
-	return 0;
 }
 
 /*
@@ -1349,9 +1373,9 @@ static int upmt_pdft_set(struct sk_buff *skb, struct genl_info *info){
 	int tid, res;
 	unsigned int ip;
 
-	//printk("\n\t upmt_pdft_set - set MESSAGE RECEIVED");
+	//dmesg("upmt_pdft_set - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_pdft_set - error");
+		dmesge("upmt_pdft_set");
 		return -1;
 	}
 
@@ -1361,21 +1385,19 @@ static int upmt_pdft_set(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_pdft_set - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_pdft_set - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
 
 	ip = *(unsigned int *) extract_nl_attr(info, UPMT_A_IP_ADDR);
 	tid = *(int *) extract_nl_attr(info, UPMT_A_TUN_TID);
-	//printk("IpAddress: %u\n", ip);
-	//printk("TID: %d\n", tid);
+	//dmesg("IpAddress: %u", ip);
+	//dmesg("TID: %d", tid);
 
 	/*
 	 * Creating SET response
 	 */
-
-	bul_write_lock_bh();
 
 	if (tid > 0) {
 		te = tunt_search_by_tid(tid);
@@ -1399,7 +1421,6 @@ static int upmt_pdft_set(struct sk_buff *skb, struct genl_info *info){
 
 	res = send_error_response_message(UPMT_C_SET_PDFT, info, "Destination rule inserted.");
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -1408,9 +1429,9 @@ static int upmt_pdft_del(struct sk_buff *skb, struct genl_info *info){
 	int res;
 	unsigned int ip;
 
-	//printk("\n\t upmt_pdft_set - set MESSAGE RECEIVED");
+	//dmesg("upmt_pdft_set - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_pdft_del - error");
+		dmesge("upmt_pdft_del");
 		return -1;
 	}
 
@@ -1420,7 +1441,7 @@ static int upmt_pdft_del(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_pdft_del - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_pdft_del - msg_a_type - wrong message format");
 		return -1;
 	}
 	//print_upmt_type_msg(msg_a_type);
@@ -1430,8 +1451,6 @@ static int upmt_pdft_del(struct sk_buff *skb, struct genl_info *info){
 	/*
 	 * Creating DEL response
 	 */
-
-	bul_write_lock_bh();
 
 	if (pdft_search(ip) == NULL) {
 		res = send_error_response_message(UPMT_C_DEL_PDFT, info, "Destination rule does not exist.");
@@ -1446,7 +1465,6 @@ static int upmt_pdft_del(struct sk_buff *skb, struct genl_info *info){
 	res = send_error_response_message(UPMT_C_DEL_PDFT, info, "Destination rule deleted.");
 
 end:
-	bul_write_unlock_bh();
 	return res;
 }
 
@@ -1456,9 +1474,9 @@ static int upmt_pdft_lst(struct sk_buff *skb, struct genl_info *info){
 	struct pdft_entry **pea = NULL;
 	int N, i, res;
 
-	//printk("\n\t upmt_mdl_lst - set MESSAGE RECEIVED");
+	//dmesg("upmt_mdl_lst - set MESSAGE RECEIVED");
 	if (info == NULL){
-		printk("\n\t upmt_pdft_lst - error");
+		dmesge("upmt_pdft_lst");
 		return -1;
 	}
 
@@ -1468,11 +1486,9 @@ static int upmt_pdft_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
 	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
-		printk("\n\t upmt_pdft_lst - msg_a_type - wrong message format %s", msg_a_type);
+		dmesge("upmt_pdft_lst - msg_a_type - wrong message format");
 		return -1;
 	}
-
-	bul_read_lock_bh();
 
 	N = pdft_count();
 	if(N == 0){
@@ -1482,7 +1498,7 @@ static int upmt_pdft_lst(struct sk_buff *skb, struct genl_info *info){
 
 	pea = (struct pdft_entry **) kzalloc(sizeof(struct pdft_entry *)*N, GFP_ATOMIC);
 	if(pea == NULL){
-		printk("upmt_pdft_lst - Error - Unable to allocating memory for pea");
+		dmesge("upmt_pdft_lst - Unable to allocate memory for pea");
 		res = send_error_response_message(UPMT_C_LST_PDFT, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -1490,7 +1506,7 @@ static int upmt_pdft_lst(struct sk_buff *skb, struct genl_info *info){
 
 	msg_data = (struct RESP_MSG_DATA *) kzalloc(sizeof(struct RESP_MSG_DATA)*(N*2), GFP_ATOMIC);
 	if(msg_data == NULL){
-		printk("upmt_pdft_lst - Error - Unable to allocating memory for msg_data");
+		dmesge("upmt_pdft_lst - Unable to allocate memory for msg_data");
 		res = send_error_response_message(UPMT_C_LST_PDFT, info, "Memory error (type 'dmesg' for details).");
 		goto end;
 	}
@@ -1503,18 +1519,229 @@ static int upmt_pdft_lst(struct sk_buff *skb, struct genl_info *info){
 	res = send_response_message(UPMT_C_LST_PDFT, N*2, msg_data, info);
 
 end:
-	bul_read_unlock_bh();
 	kfree(pea);
 	kfree(msg_data);
 	return res;
 }
 
+static int upmt_keepAlive_set(struct sk_buff *skb, struct genl_info *info){
+	char *message;
+	struct tunt_entry *te;
+	int tid, state;
+	unsigned long period, timeout;
+
+	char *msg_a_type;
+	struct RESP_MSG_DATA msg_data[UPMT_A_MSG_MAX];
+
+	dmesg("upmt_keepAlive_set - SET MESSAGE RECEIVED");
+	if (info == NULL){
+		dmesge("upmt_keepAlive_set");
+		return -1;
+	}
+
+	/*
+	 * Extracting SET request message
+	 */
+
+	msg_a_type = (char *) extract_nl_attr(info, UPMT_A_MSG_TYPE);
+	if(strcmp(msg_a_type, REQUEST_MSG) != 0){
+		dmesge("upmt_keepAlive_set - msg_a_type - wrong message format");
+		return -1;
+	}
+
+	tid = *(int *) extract_nl_attr(info, UPMT_A_TUN_TID);
+	state = *(int *) extract_nl_attr(info, UPMT_A_KEEP_STATE);
+	period = *(unsigned long *) extract_nl_attr(info, UPMT_A_KEEP_PERIOD);
+	timeout = *(unsigned long *) extract_nl_attr(info, UPMT_A_KEEP_TIMEOUT);
+
+	/***********/
+	/*printk("TID:\t %d\n", tid);
+	printk("STATE:\t %d\n", state);
+	printk("PERIOD:\t %lu\n", period);
+	printk("TIMEOUT:\t %lu\n", timeout);*/
+	/***********/
+
+	if(timeout > 0) T_TO = timeout;
+	if(period > 0){
+		T_KA = period;
+		set_ka_values();
+	}
+
+	if(state == 10)	state = KEEP_ALIVE_ON;
+	if(state == 0)	state = KEEP_ALIVE_OFF;
+
+	message = "Keep-Alive data updated.";
+	if(tid > 0){
+		te = tunt_set_ka_by_tid(tid, KEEP_ALIVE_ON);
+		if(te == NULL){
+			send_error_response_message(UPMT_C_SET_KEEP, info, "Tunnel does not exist.");
+		}
+		else{
+			dmesg("Keel-Alive activated on tunnel %d", tid);
+			message = "Keep-Alive state updated on the selected tunnel.";
+		}
+	}
+
+	set_msg_data(&msg_data[0], UPMT_A_MSG_MESSAGE, message, strlen(message));
+	send_response_message(UPMT_C_SET_KEEP, 1, msg_data, info);
+
+
+	return 0;
+}
+
+
 /*******************/
+
+static int upmt_genl_dispatcher(struct sk_buff *skb, struct genl_info *info){
+	unsigned long flags;
+	int bound, command;
+	int cmd_log;
+
+	bound = 0;
+	command = info->genlhdr->cmd;
+
+	if (info == NULL){
+		dmesge("upmt_genl_dispatcher - info = NULL");
+		return -1;
+	}
+	if (info->genlhdr == NULL){
+		dmesge("upmt_genl_dispatcher - info->genlhdr = NULL");
+		return -1;
+	}
+
+	switch (command) {
+		case UPMT_C_SET_TSA:
+			bound = upmt_tunt_reserve_port(skb, info);
+			break;
+		case UPMT_C_SET_TUNNEL:
+			bound = upmt_tunt_reserve_port(skb, info);
+			break;
+		default:
+			break;
+	}
+
+	cmd_log = 1;
+	if(cmd_log == 1) printk("upmt_genl_dispatcher - command received: %d\n", command);
+	write_lock_irqsave(&bul_mutex, flags);
+	switch (command) {
+		case UPMT_C_ECHO:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_ECHO\n");
+			upmt_echo(skb, info);
+			break;
+
+		case UPMT_C_GET_RULE:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_GET_RULE\n");
+			upmt_paft_get(skb, info);
+			break;
+		case UPMT_C_DEL_RULE:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_DEL_RULE\n");
+			upmt_paft_del(skb, info);
+			break;
+		case UPMT_C_SET_RULE:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_RULE\n");
+			upmt_paft_set(skb, info);
+			break;
+		case UPMT_C_LST_RULE:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_LST_RULE\n");
+			upmt_paft_lst(skb, info);
+			break;
+
+		case UPMT_C_GET_TUNNEL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_GET_TUNNEL\n");
+			upmt_tunt_get(skb, info);
+			break;
+		case UPMT_C_DEL_TUNNEL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_DEL_TUNNEL\n");
+			upmt_tunt_del(skb, info);
+			break;
+		case UPMT_C_SET_TUNNEL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_TUNNEL\n");
+			upmt_tunt_set(skb, info, bound);
+			break;
+		case UPMT_C_LST_TUNNEL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_LST_TUNNEL\n");
+			upmt_tunt_lst(skb, info);
+			break;
+
+		case UPMT_C_HANDOVER:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_HANDOVER\n");
+			upmt_handover(skb, info);
+			break;
+
+		case UPMT_C_AN:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_AN\n");
+			upmt_an(skb, info);
+			break;
+
+		case UPMT_C_SET_TSA:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_TSA\n");
+			upmt_tsa_set(skb, info, bound);
+			break;
+		case UPMT_C_DEL_TSA:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_DEL_TSA\n");
+			upmt_tsa_del(skb, info);
+			break;
+		case UPMT_C_LST_TSA:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_LST_TSA\n");
+			upmt_tsa_lst(skb, info);
+			break;
+
+		case UPMT_C_VERBOSE:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_VERBOSE\n");
+			upmt_verbose(skb, info);
+			break;
+
+		case UPMT_C_FLUSH:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_FLUSH\n");
+			upmt_flush(skb, info);
+			break;
+
+		case UPMT_C_SET_MDL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_MDL\n");
+			upmt_mdl_set(skb, info);
+			break;
+		case UPMT_C_DEL_MDL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_DEL_MDL\n");
+			upmt_mdl_del(skb, info);
+			break;
+		case UPMT_C_LST_MDL:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_LST_MDL\n");
+			upmt_mdl_lst(skb, info);
+			break;
+
+		case UPMT_C_SET_PDFT:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_PDFT\n");
+			upmt_pdft_set(skb, info);
+			break;
+		case UPMT_C_DEL_PDFT:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_DEL_PDFT\n");
+			upmt_pdft_del(skb, info);
+			break;
+		case UPMT_C_LST_PDFT:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_LST_PDFT\n");
+			upmt_pdft_lst(skb, info);
+			break;
+
+		case UPMT_C_SET_KEEP:
+			if(cmd_log == 1) printk("upmt_genl_dispatcher - UPMT_C_SET_KEEP\n");
+			upmt_keepAlive_set(skb, info);
+			break;
+		
+		default:
+			dmesg("upmt_genl_dispatcher - unknow message");
+		break;
+	}
+	write_unlock_irqrestore(&bul_mutex, flags);
+	return 0;
+}
+
+/*******************/
+
 static struct genl_ops upmt_gnl_ops_echo = {
 	.cmd = UPMT_C_ECHO,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_echo,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1522,7 +1749,7 @@ static struct genl_ops upmt_gnl_ops_paft_get = {
 	.cmd = UPMT_C_GET_RULE,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_paft_get,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1530,7 +1757,7 @@ static struct genl_ops upmt_gnl_ops_paft_del = {
 	.cmd = UPMT_C_DEL_RULE,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_paft_del,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1538,7 +1765,7 @@ static struct genl_ops upmt_gnl_ops_paft_set = {
 	.cmd = UPMT_C_SET_RULE,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_paft_set,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1546,7 +1773,7 @@ static struct genl_ops upmt_gnl_ops_paft_lst = {
 	.cmd = UPMT_C_LST_RULE,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_paft_lst,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1554,7 +1781,7 @@ static struct genl_ops upmt_gnl_ops_tunt_get = {
 	.cmd = UPMT_C_GET_TUNNEL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tunt_get,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1562,7 +1789,7 @@ static struct genl_ops upmt_gnl_ops_tunt_del = {
 	.cmd = UPMT_C_DEL_TUNNEL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tunt_del,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1570,7 +1797,7 @@ static struct genl_ops upmt_gnl_ops_tunt_set = {
 	.cmd = UPMT_C_SET_TUNNEL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tunt_set,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1578,7 +1805,7 @@ static struct genl_ops upmt_gnl_ops_tunt_lst = {
 	.cmd = UPMT_C_LST_TUNNEL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tunt_lst,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1586,7 +1813,7 @@ static struct genl_ops upmt_gnl_ops_handover = {
 	.cmd = UPMT_C_HANDOVER,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_handover,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1594,7 +1821,7 @@ static struct genl_ops upmt_gnl_ops_an = {
 	.cmd = UPMT_C_AN,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_an,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1602,7 +1829,7 @@ static struct genl_ops upmt_gnl_ops_tsa_set = {
 	.cmd = UPMT_C_SET_TSA,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tsa_set,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1610,7 +1837,7 @@ static struct genl_ops upmt_gnl_ops_tsa_del = {
 	.cmd = UPMT_C_DEL_TSA,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tsa_del,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1618,7 +1845,7 @@ static struct genl_ops upmt_gnl_ops_tsa_lst = {
 	.cmd = UPMT_C_LST_TSA,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_tsa_lst,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1626,7 +1853,7 @@ static struct genl_ops upmt_gnl_ops_verbose = {
 	.cmd = UPMT_C_VERBOSE,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_verbose,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1634,7 +1861,7 @@ static struct genl_ops upmt_gnl_ops_flush = {
 	.cmd = UPMT_C_FLUSH,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_flush,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1642,7 +1869,7 @@ static struct genl_ops upmt_gnl_ops_mdl_set = {
 	.cmd = UPMT_C_SET_MDL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_mdl_set,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1650,7 +1877,7 @@ static struct genl_ops upmt_gnl_ops_mdl_del = {
 	.cmd = UPMT_C_DEL_MDL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_mdl_del,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1658,7 +1885,7 @@ static struct genl_ops upmt_gnl_ops_mdl_lst = {
 	.cmd = UPMT_C_LST_MDL,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_mdl_lst,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1670,7 +1897,7 @@ static struct genl_ops upmt_gnl_ops_pdft_set = {
 	.cmd = UPMT_C_SET_PDFT,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_pdft_set,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1678,7 +1905,7 @@ static struct genl_ops upmt_gnl_ops_pdft_del = {
 	.cmd = UPMT_C_DEL_PDFT,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_pdft_del,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 
@@ -1686,20 +1913,50 @@ static struct genl_ops upmt_gnl_ops_pdft_lst = {
 	.cmd = UPMT_C_LST_PDFT,
 	.flags = 0,
 	.policy = upmt_genl_policy,
-	.doit = upmt_pdft_lst,
+	.doit = upmt_genl_dispatcher,
+	.dumpit = NULL,
+};
+
+/*
+ * KEEP-ALIVE
+ */
+
+static struct genl_ops upmt_gnl_ops_keep_set = {
+	.cmd = UPMT_C_SET_KEEP,
+	.flags = 0,
+	.policy = upmt_genl_policy,
+	.doit = upmt_genl_dispatcher,
 	.dumpit = NULL,
 };
 /*******************/
 
-int upmt_genl_register(void){
+//int upmt_genl_register(int FAM){
+int upmt_genl_register(){
 	int rc;
+//	char family[GENL_NAMSIZ];
+
+	// the netlink family name is now concatenated with the hostname of the namespace from where insmod is executed (Sander)
+	sprintf(upmt_gnl_family.name,"%s%s",UPMT_GNL_FAMILY_NAME,upmtns->uts_ns->name.nodename);
+
+	// the family can't be too long (why 13? should be 16) (Sander)
+	if (strlen(upmt_gnl_family.name) > 13){
+		dmesge("upmt_genl_register - hostname too long - unable to register upmt_genl_family");
+		return -1;
+	}
+
+	/*if(FAM > 0){
+		sprintf(family, "%s%s%d",UPMT_GNL_FAMILY_NAME, upmtns->uts_ns->name.nodename, FAM);
+		memcpy(upmt_gnl_family.name, family, GENL_NAMSIZ);
+		//dmesg("upmt_genl_register: %s", upmt_gnl_family.name);
+	}*/
 
 	rc = genl_register_family(&upmt_gnl_family);
 	if (rc != 0){
-		printk("\n\t upmt_genl_register - unable to register upmt_genl_family");
+		dmesge("upmt_genl_register - unable to register upmt_genl_family");
+		dmesge(upmt_gnl_family.name);
 		return -1;
 	}
-	//printk("\n\t upmt_genl_register - id ---> %u", upmt_gnl_family.id);
+	//dmesg("upmt_genl_register - id ---> %u", upmt_gnl_family.id);
 
 	/*
 	 * ECHO
@@ -1708,7 +1965,7 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_echo);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_echo");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_echo");
 		return -1;
 	}
 
@@ -1719,28 +1976,28 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_paft_get);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_paft_get");
+		dmesg("upmt_genl_register - unable to register upmt_gnl_ops_paft_get");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_paft_set);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_paft_set");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_paft_set");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_paft_del);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_paft_del");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_paft_del");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_paft_lst);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_paft_lst");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_paft_lst");
 		return -1;
 	}
 
@@ -1751,28 +2008,28 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tunt_set);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tunt_set");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tunt_set");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tunt_get);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tunt_get");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tunt_get");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tunt_del);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tunt_del");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tunt_del");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tunt_lst);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tunt_lst");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tunt_lst");
 		return -1;
 	}
 
@@ -1783,7 +2040,7 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_handover);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_handover");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_handover");
 		return -1;
 	}
 
@@ -1794,21 +2051,21 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tsa_set);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tsa_set");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tsa_set");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tsa_del);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tsa_del");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tsa_del");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_tsa_lst);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_tsa_lst");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_tsa_lst");
 		return -1;
 	}
 
@@ -1819,7 +2076,7 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_an);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_an");
+		dmesg("upmt_genl_register - unable to register upmt_gnl_ops_an");
 		return -1;
 	}
 
@@ -1830,14 +2087,14 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_verbose);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_verbose");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_verbose");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_flush);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_flush");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_flush");
 		return -1;
 	}
 
@@ -1848,21 +2105,21 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_mdl_set);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_mdl_set");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_mdl_set");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_mdl_del);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_mdl_del");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_mdl_del");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_mdl_lst);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_mdl_lst");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_mdl_lst");
 		return -1;
 	}
 
@@ -1873,21 +2130,32 @@ int upmt_genl_register(void){
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_pdft_set);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_pdft_set");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_pdft_set");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_pdft_del);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_pdft_del");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_pdft_del");
 		return -1;
 	}
 
 	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_pdft_lst);
 	if (rc != 0){
 		genl_unregister_family(&upmt_gnl_family);
-		printk("\n\t upmt_genl_register - unable to register upmt_gnl_ops_pdft_lst");
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_pdft_lst");
+		return -1;
+	}
+
+	/*
+	 * KEEP-ALIVE
+	 */
+
+	rc = genl_register_ops(&upmt_gnl_family, &upmt_gnl_ops_keep_set);
+	if (rc != 0){
+		genl_unregister_family(&upmt_gnl_family);
+		dmesge("upmt_genl_register - unable to register upmt_gnl_ops_keep_set");
 		return -1;
 	}
 
@@ -1899,7 +2167,7 @@ int upmt_genl_unregister(void){
 
 	rc = genl_unregister_family(&upmt_gnl_family);
 	if (rc != 0){
-		printk("\n\t upmt_genl_unregister - unable to unregister upmt_genl_family");
+		dmesge("upmt_genl_unregister - unable to unregister upmt_genl_family");
 		return -1;
 	}
 

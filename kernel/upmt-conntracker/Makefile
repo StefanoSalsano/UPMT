@@ -1,7 +1,8 @@
 
 .PHONY: plugins plugins_install plugins_clean
 
-obj-m		:= xt_UPMT.o xt_UPMT_ex.o compat_xtables.o
+#obj-m		:= xt_UPMT.o xt_UPMT_ex.o compat_xtables.o
+obj-m		:= compat_xtables.o
 
 plugins:
 	@echo -e ":: Building upmt-conntracker userspace iptables plugin\n"

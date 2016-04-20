@@ -1,7 +1,6 @@
 package upmt.os;
 
 import java.io.BufferedReader;
-import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -9,7 +8,8 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.PrintWriter;
-import java.util.Arrays;
+
+import upmt.client.UPMTClient;
 
 public class Shell
 {
@@ -59,39 +59,120 @@ public class Shell
 		catch (IOException e) {e.printStackTrace();}
 		return true;
 	}
+	
+	public static boolean isRunning(Process process) 
+	{
+		try 
+		{
+			process.exitValue();
+			return false;
+		} 
+		catch(IllegalThreadStateException e) 
+		{
+			return true;
+		}
+	}
 
 	public static String executeCommand(String[] command)
 	{
-		try
-		{
-			String resultStr = "", errStr = "";
-			Process p = Runtime.getRuntime().exec(command);
-			BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
-			BufferedReader bre = new BufferedReader(new InputStreamReader(p.getErrorStream()));
-			
-			for(String line = br.readLine(); line != null; line = br.readLine()) resultStr += line + "\r\n";
-			for(String line = bre.readLine(); line != null; line = bre.readLine()) errStr += line + "\r\n";
-
-			String outStr = "";
-			for(String cmq : command) outStr += cmq + " ";
-			
-			//#ifdef ANDROID
-//			System.out.println("Executing COMMAND: -" + outStr + "-");			
-			//#endif
-			
-			p.waitFor();
-			if (p.exitValue() != 0)
+		if(UPMTClient.coreEmulator) {
+			try
 			{
-				System.out.println(outStr);
-				System.out.println(resultStr);
-				System.out.println(errStr);
+				String resultStr = "", errStr = "", commandStr="";
+				ProcessBuilder builder = new ProcessBuilder(command);
+				builder.redirectErrorStream(true);
+				
+				Process p = builder.start();
+
+				BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+				BufferedReader bre = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+				
+				// commandStr is filled with every String of the command array (Sander)
+				for (int i=command.length; i>0 ; i--)
+				{
+					if (i!=command.length) commandStr+=" ";
+					commandStr+=command[command.length-i];
+				}
+				
+				// result stream and error stream should be read at the same time (Sander)
+				String iline,eline;
+				while (isRunning(p) || br.ready() || bre.ready())
+				{
+					if (br.ready())
+					{	
+						iline = br.readLine();
+						resultStr += iline + "\r\n";
+						System.out.println("command \"" + commandStr + "\" output -> " +iline);
+					}
+						
+					if (bre.ready())
+					{
+						eline = bre.readLine();
+						errStr += eline + "\r\n";
+						System.out.println("command \"" + commandStr + "\" error ouput -> " +eline);
+					}
+						
+					if (!br.ready() && !bre.ready())
+					{
+							Thread.sleep(100);
+					}
+				}
+					
+				String outStr = "";
+				for(String cmq : command) outStr += cmq + " ";
+				p.waitFor();
+				br.close();
+				bre.close();
+				
+				return resultStr;
 			}
-
-
-			
-			return resultStr;
+			catch (Exception e) {e.printStackTrace();return null;}
 		}
-		catch (Exception e) {e.printStackTrace();return null;}
+		else {
+			try
+			{
+				String resultStr = "", errStr = "";
+				Process p = Runtime.getRuntime().exec(command);
+				BufferedReader br = new BufferedReader(new InputStreamReader(p.getInputStream()));
+				BufferedReader bre = new BufferedReader(new InputStreamReader(p.getErrorStream()));
+
+//				for(String line = br.readLine(); line != null; line = br.readLine()) resultStr += line + "\r\n";
+//				for(String line = bre.readLine(); line != null; line = bre.readLine()) errStr += line + "\r\n";
+				
+				for(String line = br.readLine(); line != null; line = br.readLine()) {
+					resultStr = line + "\r\n";
+				}
+				for(String line = bre.readLine(); line != null; line = bre.readLine()) {
+					errStr = line + "\r\n";
+				}
+
+				String outStr = "";
+				for(String cmq : command) {
+//					outStr += cmq + " ";
+					outStr = cmq + " ";
+				}
+
+				//#ifdef ANDROID
+				//			System.out.println("Executing COMMAND: -" + outStr + "-");			
+				//#endif
+
+				p.waitFor();
+				
+				br.close();
+				bre.close();
+				
+				if (p.exitValue() != 0)
+				{
+					System.out.println(outStr);
+					System.out.println(resultStr);
+					System.out.println(errStr);
+				}
+
+
+				return resultStr;
+			}
+			catch (Exception e) {e.printStackTrace();return null;}
+		}
 	}
 	
 	//#ifdef ANDROID
