@@ -3260,10 +3260,7 @@ public class UPMTClient implements NetworkMonitorListener, ApplicationManagerLis
 	public void printMeasure(long millis, int delay, int loss) {
 		try {
 			String content = System.currentTimeMillis() + "," + delay + "," + loss + "\n";
-			File file = new File("/home/upmt/Desktop/kp_measure.dat");
-			//if(!file.exists()){
-			//	file.createNewFile();
-			//}
+			File file = new File("/home/upmt/Desktop/keepAlive_measures.dat");
 			FileWriter fw = new FileWriter(file.getAbsoluteFile(), true);
 			BufferedWriter bw = new BufferedWriter(fw);
 			bw.write(content);
