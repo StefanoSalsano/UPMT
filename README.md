@@ -7,9 +7,10 @@ cd /home/upmt/UPMT
 git pull
 
 
-BASIC CONFIGURATION
+## BASIC CONFIGURATION
 
-1 - Create at least two virtual machine importing the Ubuntu_12.04_UPMT.ova 
+```
+1 - Create at least two virtual machine importing the Ubuntu_12.04_UPMT.ova
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
 Edit the line:
@@ -17,10 +18,11 @@ rme_vepa = <VEPA IP address> (they have to be different between the peers, i.e. 
 Edit the line:
 rme_net = <interface:IP address/subnet>
 The rme_net interface addresses of the peers must be in the same subnet.
+```
 
+## BASIC CONFIGURATION EXAMPLE
 
-BASIC CONFIGURATION EXAMPLE
-
+```
 On peer 1:
 rme_vepa = 10.0.0.1
 rme_net = eth0:192.168.0.1/24
@@ -28,10 +30,11 @@ rme_net = eth0:192.168.0.1/24
 On peer 2:
 rme_vepa = 10.0.0.3
 rme_net = eth0:192.168.0.3/24
+```
 
+## BUILD AND START THE UPMT PEERS (in each VM)
 
-BUILD AND START THE UPMT PEERS (in each VM)
-
+```
 cd /home/upmt/UPMT
 make clean: to clean all binaries files in the repository
 make: to compile all upmt system
@@ -49,8 +52,9 @@ make
 make install
 
 In the netem/delay and netem/loss folder there are example scripts that perfom a dynamic changes of the delay and loss conditions.
+```
 
-APPENDIX
+## APPENDIX
 sudo password: upmt
 
 The execution of the upmt solution changes the network configuration of the system.
