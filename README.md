@@ -13,6 +13,8 @@ git pull
 
 ```
 1 - Create at least two virtual machines importing the Ubuntu_12.04_UPMT.ova
+2 - The VM has 3 eth interfaces used for UPMT and one eth interface used for connecting to the host
+3 - The 3 eth interfaces used for UPMT are connected to three VirtualBox internal interface
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
 Edit the line:
