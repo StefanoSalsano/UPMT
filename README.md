@@ -3,14 +3,16 @@ Universal Per-application Mobility management using Tunnels
 
 SYNC local copy with GitHub Repository
 
+```
 cd /home/upmt/UPMT
 git pull
+```
 
 
 ## BASIC CONFIGURATION
 
 ```
-1 - Create at least two virtual machine importing the Ubuntu_12.04_UPMT.ova
+1 - Create at least two virtual machines importing the Ubuntu_12.04_UPMT.ova
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
 Edit the line:
