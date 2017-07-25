@@ -13,8 +13,10 @@ git pull
 
 ```
 1 - Create at least two virtual machines importing the Ubuntu_12.04_UPMT.ova
-2 - The VM has 3 eth interfaces used for UPMT and one eth interface used for connecting to the host
-3 - The 3 eth interfaces used for UPMT are connected to three VirtualBox internal interface
+1.1 - The VM has 3 eth interfaces used for UPMT and one eth interface used for connecting to the host
+1.2 - The 3 eth interfaces used for UPMT are connected to three VirtualBox internal interface
+1.3 - Run "ip a" to check which interface names have been assigned to the VM interface
+1.4 in order to fix the interface name assignment: sudo gedit /etc/udev/rules.d/70-persistent-net.rules
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
 Edit the line:
