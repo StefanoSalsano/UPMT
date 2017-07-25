@@ -19,6 +19,7 @@ git pull
 1.4 in order to fix the interface name assignment: sudo gedit /etc/udev/rules.d/70-persistent-net.rules
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
+    gedit /home/upmt/UPMT/java/upmt/cfg/peer/peer.cfg
 Edit the line:
 rme_vepa = <VEPA IP address> (they have to be different between the peers, i.e. 10.0.0.1 and 10.0.0.3)
 Edit the line:
