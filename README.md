@@ -16,7 +16,12 @@ git pull
 1.1 - The VM has 3 eth interfaces used for UPMT and one eth interface used for connecting to the host
 1.2 - The 3 eth interfaces used for UPMT are connected to three VirtualBox internal interface
 1.3 - Run "ip a" to check which interface names have been assigned to the VM interface
-1.4 in order to fix the interface name assignment: sudo gedit /etc/udev/rules.d/70-persistent-net.rules
+1.4 in order to fix the interface name assignment: 
+      open VirtualBox settings, networking properties (advanced)
+      check the mac addresses of Adapter 1, Adapter 2, Adapter 3, Adapter 4
+      sudo gedit /etc/udev/rules.d/70-persistent-net.rules
+        associate Adapter 1 -> eth0, Adapter 2 -> eth1, Adapter 3 -> eth2, Adapter 4 -> eth3
+        delete all other interfaces
 2 - cd /home/upmt/UPMT
 3 - Open the java/upmt/cfg/peer/peer.cfg with a text editor.
     gedit /home/upmt/UPMT/java/upmt/cfg/peer/peer.cfg
